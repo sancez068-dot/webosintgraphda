@@ -420,7 +420,7 @@
       @keyframes toolbar-in { from{opacity:0;transform:translateY(-5px) scale(.96)} to{opacity:1;transform:none} }
     }
 .danger-icon-btn{display:inline-flex;align-items:center;justify-content:center}.danger-icon-btn svg{display:block}</style>
-    <meta name="trace-build" content="2026-08-18-auth-v3">
+    <meta name="trace-build" content="2026-08-18-pairing-api-v1">
 </head>
 <body>
   <div class="app-bg"></div>
@@ -506,127 +506,100 @@
     // Example: https://trace-api.example.com
     // The API must include the exact static-site origin in ALLOWED_ORIGINS.
     // ============================================================
-    const API_BASE_URL = "https://apiosintgraphda.onrender.com".replace(/\/+$/, "");
+    const API_BASE_URL = (
+      document.querySelector('meta[name="trace-api"]')?.content ||
+      new URLSearchParams(location.search).get("api") ||
+      "https://apiosintgraphda.onrender.com"
+    ).replace(/\/+$/, "");
+
     const TELEGRAM_WEBAPP = window.Telegram?.WebApp || null;
-    const REQUEST_TIMEOUT_MS = 60000;
-    let authInFlight = null;
-    let bootInFlight = null;
-    let authRetryAfter = 0;
-
-    function getTelegramInitData() {
-      const tg = window.Telegram?.WebApp;
-      if (typeof tg?.initData === "string" && tg.initData) return tg.initData;
-      const hash = String(location.hash || "");
-      const match = hash.match(/(?:^|[#&])tgWebAppData=([^&]*)/);
-      if (match) { try { return decodeURIComponent(match[1]); } catch {} }
-      return "";
-    }
-
-    function xhrRequest(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open(options.method || "GET", API_BASE_URL + path, true);
-        xhr.withCredentials = true;
-        xhr.timeout = timeoutMs;
-        const headers = options.headers || {};
-        Object.keys(headers).forEach(k => xhr.setRequestHeader(k, headers[k]));
-        xhr.setRequestHeader("Accept", "application/json");
-        xhr.onload = () => {
-          let payload = null;
-          const ct = xhr.getResponseHeader("content-type") || "";
-          if (ct.includes("application/json") || xhr.responseText) {
-            try { payload = JSON.parse(xhr.responseText); } catch {}
-          }
-          if (xhr.status >= 200 && xhr.status < 300 && payload?.ok !== false && payload?.success !== false) {
-            resolve(payload?.data ?? payload);
-            return;
-          }
-          const err = payload?.error || payload?.detail?.error || {};
-          const e = new Error(err.message || payload?.message || `HTTP ${xhr.status}`);
-          e.status = xhr.status;
-          e.code = err.code || payload?.code || `HTTP_${xhr.status}`;
-          reject(e);
-        };
-        xhr.onerror = () => {
-          const e = new Error("Браузер не смог получить ответ API. Проверьте CORS и cookie-сессию.");
-          e.code = "NETWORK_ERROR";
-          e.status = 0;
-          reject(e);
-        };
-        xhr.ontimeout = () => {
-          const e = new Error(`API не ответил за ${Math.round(timeoutMs / 1000)} сек.`);
-          e.code = "API_TIMEOUT";
-          e.status = 0;
-          reject(e);
-        };
-        xhr.onabort = () => {
-          const e = new Error("Запрос к API был прерван.");
-          e.code = "API_ABORTED";
-          e.status = 0;
-          reject(e);
-        };
-        let body = options.body;
-        if (body && typeof body !== "string" && !(body instanceof FormData) && !(body instanceof Blob)) {
-          body = JSON.stringify(body);
-        }
-        if (body && !(body instanceof FormData) && !(body instanceof Blob) && !Object.keys(headers).some(k => k.toLowerCase() === "content-type")) {
-          xhr.setRequestHeader("Content-Type", "application/json");
-        }
-        xhr.send(body ?? null);
-      });
-    }
 
     const api = {
-      request(path, options = {}) {
-        return xhrRequest(path, options, REQUEST_TIMEOUT_MS);
+      async request(path, options = {}) {
+        const headers = new Headers(options.headers || {});
+        const savedToken = sessionStorage.getItem("trace_graph_api_token") || "";
+        if (savedToken && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${savedToken}`);
+        if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
+          headers.set("Content-Type", "application/json");
+        }
+        let res;
+        try {
+          res = await fetch(API_BASE_URL + path, {
+            ...options,
+            headers,
+            credentials: "include",
+            cache: "no-store",
+            redirect: "follow"
+          });
+        } catch (networkError) {
+          const e = new Error("Не удалось подключиться к API. Проверьте адрес API и CORS.");
+          e.code = "NETWORK_ERROR";
+          e.cause = networkError;
+          throw e;
+        }
+        let payload = null;
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          try { payload = await res.json(); } catch {}
+        }
+        if (!res.ok) {
+          const err = payload?.error || payload?.detail?.error || {};
+          const e = new Error(err.message || `HTTP ${res.status}`);
+          e.code = err.code || `HTTP_${res.status}`;
+          e.status = res.status;
+          throw e;
+        }
+        return payload?.data ?? payload;
       },
-      download(path) {
-        return new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open("GET", API_BASE_URL + path, true);
-          xhr.withCredentials = true;
-          xhr.timeout = REQUEST_TIMEOUT_MS;
-          xhr.responseType = "blob";
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve(xhr);
-            else reject(new Error(`HTTP ${xhr.status}`));
-          };
-          xhr.onerror = () => reject(new Error("Не удалось подключиться к API"));
-          xhr.ontimeout = () => reject(new Error("API не ответил вовремя"));
-          xhr.send();
-        });
+      async download(path) {
+        let res;
+        try {
+          res = await fetch(API_BASE_URL + path, {
+            credentials: "include",
+            cache: "no-store"
+          });
+        } catch {
+          throw new Error("Не удалось подключиться к API");
+        }
+        if (!res.ok) {
+          let message = `HTTP ${res.status}`;
+          try {
+            const payload = await res.json();
+            message = payload?.error?.message || payload?.detail?.error?.message || message;
+          } catch {}
+          throw new Error(message);
+        }
+        return res;
       },
       auth: {
-        telegram(initData) {
-          if (authInFlight) return authInFlight;
-          const wait = authRetryAfter - Date.now();
-          if (wait > 0) {
-            const e = new Error(`API временно ограничил авторизацию. Подождите ${Math.ceil(wait / 1000)} сек.`);
-            e.status = 429; e.code = "AUTH_RATE_LIMITED"; throw e;
-          }
-          if (!initData) {
-            const e = new Error("Telegram initData не получен. Откройте приложение через Telegram.");
-            e.status = 401; e.code = "NO_TELEGRAM_INIT_DATA"; throw e;
-          }
-          authInFlight = xhrRequest("/api/auth/telegram", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({initData})
-          }).catch(e => {
-            if (e.status === 429) authRetryAfter = Date.now() + 60000;
-            throw e;
-          }).finally(() => { authInFlight = null; });
-          return authInFlight;
-        },
         me: () => api.request("/api/auth/me"),
-        logout: () => api.request("/api/auth/logout", {method:"POST"})
+        logout: async () => { try { return await api.request("/api/auth/logout", {method:"POST"}); } finally { sessionStorage.removeItem("trace_graph_api_token"); } },
+        linkCreate: () => new Promise((resolve,reject) => {
+          const x=new XMLHttpRequest(); x.open("POST", API_BASE_URL+"/api/auth/link/create", true); x.withCredentials=true; x.timeout=60000;
+          x.setRequestHeader("Content-Type","application/json");
+          x.onload=()=>{let p=null;try{p=JSON.parse(x.responseText)}catch{};if(x.status>=200&&x.status<300)resolve(p?.data??p);else reject(new Error(p?.error?.message||p?.detail?.error?.message||`HTTP ${x.status}`));};
+          x.onerror=()=>reject(new Error("Не удалось создать код привязки")); x.ontimeout=()=>reject(new Error("API не ответил за 60 секунд")); x.send();
+        }),
+        linkStatus: code => api.request(`/api/auth/link/status?code=${encodeURIComponent(code)}`),
+        linkLogin: code => new Promise((resolve,reject) => {
+          const x=new XMLHttpRequest(); x.open("POST", API_BASE_URL+"/api/auth/link/login", true); x.withCredentials=true; x.timeout=60000;
+          x.setRequestHeader("Content-Type","application/json");
+          x.onload=()=>{let p=null;try{p=JSON.parse(x.responseText)}catch{};if(x.status>=200&&x.status<300){const d=p?.data??p;if(d?.token)sessionStorage.setItem("trace_graph_api_token",d.token);resolve(d);}else reject(Object.assign(new Error(p?.error?.message||p?.detail?.error?.message||`HTTP ${x.status}`),{status:x.status,code:p?.error?.code||p?.detail?.error?.code}));};
+          x.onerror=()=>reject(new Error("Не удалось выполнить вход через API")); x.ontimeout=()=>reject(new Error("API не ответил за 60 секунд")); x.send(JSON.stringify({code}));
+        })
       },
       graphs: {
         list: (page=1, limit=10) => api.request(`/api/graphs?page=${page}&limit=${limit}`),
         get: id => api.request(`/api/graphs/${encodeURIComponent(id)}`),
-        create: body => api.request("/api/graphs", {method:"POST", body}),
-        patch: (id, body) => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"PATCH", body}),
-        sync: graph => api.request("/api/graphs/sync", {method:"PUT", body:{id:graph.id,title:graph.title,name:graph.title,createdAt:graph.createdAt,updatedAt:graph.updatedAt,nodes:graph.nodes||[],edges:graph.edges||[],visibility:graph.visibility||"private",published:!!graph.published,pinned:!!graph.pinned}}),
+        create: body => api.request("/api/graphs", {method:"POST", body:JSON.stringify(body)}),
+        patch: (id, body) => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"PATCH", body:JSON.stringify(body)}),
+        sync: graph => api.request("/api/graphs/sync", {method:"PUT", body:JSON.stringify({
+          id: graph.id, title: graph.title, name: graph.title,
+          createdAt: graph.createdAt, updatedAt: graph.updatedAt,
+          nodes: graph.nodes || [], edges: graph.edges || [],
+          visibility: graph.visibility || "private",
+          published: !!graph.published, pinned: !!graph.pinned
+        })}),
         remove: id => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"DELETE"}),
         removeAll: () => api.request("/api/graphs", {method:"DELETE"}),
         publish: id => api.request(`/api/graphs/${encodeURIComponent(id)}/publish`, {method:"POST"}),
@@ -641,16 +614,26 @@
       },
       feed: {
         list: (page=1, limit=10, sort="popular") => api.request(`/api/feed?page=${page}&limit=${limit}&sort=${sort}`),
-        sync: items => api.request("/api/feed/sync", {method:"PUT", body:{items}})
+        sync: items => api.request("/api/feed/sync", {method:"PUT", body:JSON.stringify({items})})
       },
-      favorites: { list: (page=1, limit=10) => api.request(`/api/favorites?page=${page}&limit=${limit}`) },
-      reports: { create: body => api.request("/api/reports", {method:"POST", body}) },
-      settings: { get: () => api.request("/api/settings"), patch: body => api.request("/api/settings", {method:"PATCH", body}) },
-      media: { upload: formData => api.request("/api/media", {method:"POST", body:formData}), remove: id => api.request(`/api/media/${encodeURIComponent(id)}`, {method:"DELETE"}) },
+      favorites: {
+        list: (page=1, limit=10) => api.request(`/api/favorites?page=${page}&limit=${limit}`)
+      },
+      reports: {
+        create: body => api.request("/api/reports", {method:"POST", body:JSON.stringify(body)})
+      },
+      settings: {
+        get: () => api.request("/api/settings"),
+        patch: body => api.request("/api/settings", {method:"PATCH", body:JSON.stringify(body)})
+      },
+      media: {
+        upload: formData => api.request("/api/media", {method:"POST", body:formData}),
+        remove: id => api.request(`/api/media/${encodeURIComponent(id)}`, {method:"DELETE"})
+      },
       admin: {
         stats: () => api.request("/api/admin/stats"),
-        users: (page=1,limit=50) => api.request(`/api/admin/users?page=${page}&limit=${limit}`),
-        reports: (page=1,limit=50,status="open") => api.request(`/api/admin/reports?page=${page}&limit=${limit}&status=${encodeURIComponent(status)}`),
+        users: (page=1, limit=50) => api.request(`/api/admin/users?page=${page}&limit=${limit}`),
+        reports: (page=1, limit=50, status="open") => api.request(`/api/admin/reports?page=${page}&limit=${limit}&status=${encodeURIComponent(status)}`),
         reportGraph: id => api.request(`/api/admin/reports/${id}/graph`),
         resolve: id => api.request(`/api/admin/reports/${id}/resolve`, {method:"POST"}),
         reject: id => api.request(`/api/admin/reports/${id}/reject`, {method:"POST"}),
@@ -801,59 +784,64 @@
       state.reports = state.adminData.reports;
     }
 
-    async function bootstrap() {
-      state.loading = true;
-      state.ready = false;
-      try {
-        if (!API_BASE_URL) throw new Error("API не настроен");
+    let pairingCode = "";
+    let pairingExpiresAt = 0;
+    let pairingTimer = null;
 
-        // Telegram Mini App / Web App: initialize the bridge first.
-        if (TELEGRAM_WEBAPP) {
-          try { TELEGRAM_WEBAPP.ready(); } catch {}
-          try { TELEGRAM_WEBAPP.expand(); } catch {}
-          try { TELEGRAM_WEBAPP.setHeaderColor?.("#090d18"); } catch {}
-          try { TELEGRAM_WEBAPP.setBackgroundColor?.("#090d18"); } catch {}
-        }
-
-        // A session cookie survives page reloads. This also makes the same
-        // static index usable in a normal browser after Telegram login.
-        let auth = null;
-        try {
-          const me = await api.auth.me();
-          auth = { user: me, settings: me?.settings || {} };
-        } catch (meError) {
-          const initData = TELEGRAM_WEBAPP?.initData || "";
-          if (!initData) {
-            if (meError.status === 401 || meError.code === "UNAUTHORIZED") {
-              throw new Error("Откройте приложение из Telegram, чтобы выполнить вход.");
-            }
-            throw meError;
-          }
-          auth = await api.auth.telegram(initData);
-        }
-
-        if (!auth?.user) throw new Error("API не вернул данные пользователя");
-        state.user = auth.user;
-        state.settings = {...defaultSettings, ...(auth.settings || {}), ...(auth.user.settings || {})};
-
-        await Promise.all([loadGraphs(), loadFeed(), loadFavorites()]);
-        if (state.user.role === "admin") await loadAdminData();
-
-        state.ready = true;
-        state.loading = false;
-        applyTheme();
-        render();
-      } catch (e) {
-        state.loading = false;
-        state.ready = false;
-        renderFatal(e);
+    function stopPairingPoll(){ if(pairingTimer) clearInterval(pairingTimer); pairingTimer=null; }
+    function updatePairingTimer(){
+      const el=document.getElementById("pairing-timer"); if(!el)return;
+      const sec=Math.max(0,Math.ceil((pairingExpiresAt-Date.now())/1000));
+      el.textContent=`Код действует ещё ${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`;
+    }
+    function renderPairing(message=""){
+      document.getElementById("app").innerHTML=`<div style="min-height:100vh;display:grid;place-items:center;padding:20px;background:var(--bg);color:var(--text)"><div class="card" style="width:min(560px,100%);padding:28px;text-align:center"><div class="eyebrow">TRACE / ПРИВЯЗКА</div><h1 style="margin:8px 0 10px">Привяжите Telegram</h1><p class="subtitle">Откройте TRACE BOT → «Привязать аккаунт» → отправьте этот код.</p><div style="font-size:32px;font-weight:800;letter-spacing:5px;margin:24px 0;user-select:all">${esc(pairingCode)}</div><button class="primary-btn" id="copy-pairing">Скопировать код</button><button class="secondary-btn" id="new-pairing" style="margin-left:8px">Новый код</button><div id="pairing-timer" class="muted" style="margin-top:16px"></div><div class="muted" style="margin-top:10px">После подтверждения ботом вход выполнится автоматически.</div>${message?`<div style="margin-top:16px">${esc(message)}</div>`:""}</div></div>`;
+      updatePairingTimer();
+      document.getElementById("copy-pairing")?.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(pairingCode);toast("Код скопирован");}catch{toast("Не удалось скопировать код");}});
+      document.getElementById("new-pairing")?.addEventListener("click",()=>createPairing().catch(renderFatal));
+    }
+    async function createPairing(){
+      stopPairingPoll();
+      const r=await api.auth.linkCreate();
+      pairingCode=r?.code||"";
+      if(!pairingCode)throw new Error("API не вернул код привязки");
+      pairingExpiresAt=Date.now()+Number(r.expires_in||300)*1000;
+      renderPairing();
+      pairingTimer=setInterval(checkPairing,2000);
+    }
+    async function checkPairing(){
+      if(!pairingCode)return;
+      if(Date.now()>=pairingExpiresAt){stopPairingPoll();renderPairing("Код истёк. Получите новый код.");return;}
+      updatePairingTimer();
+      try{
+        const st=await api.auth.linkStatus(pairingCode);
+        if(!st?.linked)return;
+        stopPairingPoll();
+        const auth=await api.auth.linkLogin(pairingCode);
+        if(!auth?.user)throw new Error("API не вернул пользователя после привязки");
+        state.user=auth.user; state.settings={...defaultSettings,...(auth.settings||{})};
+        await Promise.all([loadGraphs(),loadFeed(),loadFavorites()]);
+        if(state.user.role==="admin")await loadAdminData();
+        state.ready=true;state.loading=false;applyTheme();render();
+      }catch(e){
+        if(e.status===404 || e.code==="INVALID_PAIRING_CODE"){stopPairingPoll();renderPairing("Код недействителен или истёк");}
       }
     }
-
-    function renderFatal(error) {
-      const message = error?.message || "Не удалось подключиться к API";
-      document.getElementById("app").innerHTML = `<div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text)"><div class="card" style="max-width:560px;padding:28px;text-align:center"><div class="eyebrow">TRACE / API</div><h1>Не удалось открыть приложение</h1><p class="subtitle">${esc(message)}</p><button class="primary-btn" id="retry-api" style="margin-top:20px">Повторить</button></div></div>`;
-      $("#retry-api")?.addEventListener("click", bootstrap);
+    async function bootstrap(){
+      state.loading=true;state.ready=false;
+      try{
+        if(!API_BASE_URL)throw new Error("API не настроен");
+        if(TELEGRAM_WEBAPP){try{TELEGRAM_WEBAPP.ready();TELEGRAM_WEBAPP.expand();}catch{}}
+        const token=sessionStorage.getItem("trace_graph_api_token")||"";
+        if(token){try{const me=await api.auth.me();state.user=me;state.settings={...defaultSettings,...(me?.settings||{})};await Promise.all([loadGraphs(),loadFeed(),loadFavorites()]);if(state.user.role==="admin")await loadAdminData();state.ready=true;state.loading=false;applyTheme();render();return;}catch{sessionStorage.removeItem("trace_graph_api_token");}}
+        state.loading=false;
+        await createPairing();
+      }catch(e){state.loading=false;state.ready=false;renderFatal(e);}
+    }
+    function renderFatal(error){
+      const message=error?.message||"Не удалось подключиться к API";
+      document.getElementById("app").innerHTML=`<div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text)"><div class="card" style="max-width:560px;padding:28px;text-align:center"><div class="eyebrow">TRACE / API</div><h1>Не удалось открыть приложение</h1><p class="subtitle">${esc(message)}</p><button class="primary-btn" id="retry-api" style="margin-top:20px">Повторить</button></div></div>`;
+      $("#retry-api")?.addEventListener("click",bootstrap);
     }
 
     function currentGraph() {
