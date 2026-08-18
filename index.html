@@ -491,10 +491,10 @@
         deleteAll: "Delete all graphs", deleteAllText: "All local graphs and their data will be permanently removed.",
         confirm: "Confirm action", sureDelete: "Are you sure?", yesDelete: "Yes, delete", allDeleted: "All graphs deleted",
         admin: "Admin panel", statistics: "Statistics", adminGraphs: "Graphs", moderation: "Moderation", pinned: "Pinned", adminSettings: "Settings",
-        demoMode: "API mode", demoModeText: "Data is stored through the TRACE Graph API", totalGraphs: "Total graphs", totalNodes: "Total nodes",
+        demoMode: "Demo mode", demoModeText: "Data is stored only in this browser", totalGraphs: "Total graphs", totalNodes: "Total nodes",
         totalVotes: "Feed votes", actions: "Actions", connections: "connections", perPage: "per page", workspace: "OSINT WORKSPACE", library: "LIBRARY", community: "COMMUNITY", controlRoom: "CONTROL ROOM", simplePoint: "Simple point", moreDetails: "More details", structuredData: "Structured data", freeNote: "Free note", imageNode: "Image node", dragNodes: "Drag nodes separately from the canvas", role: "Role", storage: "Storage", pin: "Pin", unpin: "Unpin", noPinned: "No pinned graphs",
-        usersFake: "Users", posts: "posts", report: "Report", approve: "Approve", remove: "Hide",
-        saved: "Saved", savedItems: "saved graphs", noSaved: "Nothing saved yet", noSavedText: "Save graphs from the feed and they will appear here.", savePost: "Save", unsavePost: "Remove from saved", share: "Share", copied: "Link copied", report: "Report", reportTitle: "Report graph", reportReason: "Reason", reportPlaceholder: "Describe the problem", reportSent: "Report sent", reportAlready: "You already reported this graph", spam: "Spam", abuse: "Rule violation", falseInfo: "False information", other: "Other", deleted: "Deleted", pinFeed: "Pin to feed", unpinFeed: "Unpin from feed", compact: "Compact", comfortable: "Comfortable", branchPreview: "Branch preview", activityOverview: "Activity overview", allUsers: "All users", demoAdministration: "Administration", localStorage: "API storage", noReports: "No pending reports", reportActions: "Report actions", viewReportedGraph: "Open graph", deleteReportedGraph: "Delete graph", resolveReport: "Close report", rejectReport: "Reject report", reportDetails: "Report details", edgeActions: "Connection actions", edgeFrom: "From", edgeTo: "To", deleteConnection: "Delete connection", noEdge: "Connection not found", demoQueueClear: "Demo moderation queue is clear", imageReady: "Image uploaded", htmlReady: "HTML downloaded", zoomIn: "Zoom in", zoomOut: "Zoom out", center: "Center", rowField: "Field", rowValue: "Value", demoUser: "User profile", publish: "Publish", updatePublication: "Update publication", published: "Graph published", publicationUpdated: "Publication updated"
+        usersFake: "Demo users", posts: "posts", report: "Report", approve: "Approve", remove: "Hide",
+        saved: "Saved", savedItems: "saved graphs", noSaved: "Nothing saved yet", noSavedText: "Save graphs from the feed and they will appear here.", savePost: "Save", unsavePost: "Remove from saved", share: "Share", copied: "Link copied", report: "Report", reportTitle: "Report graph", reportReason: "Reason", reportPlaceholder: "Describe the problem", reportSent: "Report sent", reportAlready: "You already reported this graph", spam: "Spam", abuse: "Rule violation", falseInfo: "False information", other: "Other", deleted: "Deleted", pinFeed: "Pin to feed", unpinFeed: "Unpin from feed", compact: "Compact", comfortable: "Comfortable", branchPreview: "Branch preview", activityOverview: "Activity overview", allUsers: "All users", demoAdministration: "Demo administration", localStorage: "Browser storage", noReports: "No pending reports", reportActions: "Report actions", viewReportedGraph: "Open graph", deleteReportedGraph: "Delete graph", resolveReport: "Close report", rejectReport: "Reject report", reportDetails: "Report details", edgeActions: "Connection actions", edgeFrom: "From", edgeTo: "To", deleteConnection: "Delete connection", noEdge: "Connection not found", demoQueueClear: "Demo moderation queue is clear", imageReady: "Image uploaded", htmlReady: "HTML downloaded", zoomIn: "Zoom in", zoomOut: "Zoom out", center: "Center", rowField: "Field", rowValue: "Value", demoUser: "User profile", publish: "Publish", updatePublication: "Update publication", published: "Graph published", publicationUpdated: "Publication updated"
       }
     };
     const t = key => (labels[state.settings.language] || labels.ru)[key] || key;
@@ -513,97 +513,152 @@
 
     const TELEGRAM_WEBAPP = window.Telegram?.WebApp || null;
 
-    // API currently authenticates with an HttpOnly cookie. If a newer API
-    // returns a JWT in data.token, we also support Bearer authentication.
-    const TOKEN_KEY = "trace_graph_api_token";
-    let API_TOKEN = sessionStorage.getItem(TOKEN_KEY) || "";
-    function setApiToken(token) {
-      API_TOKEN = typeof token === "string" ? token : "";
-      if (API_TOKEN) sessionStorage.setItem(TOKEN_KEY, API_TOKEN);
-      else sessionStorage.removeItem(TOKEN_KEY);
+    // Current API authenticates with an HttpOnly trace_session cookie.
+    // /api/auth/telegram does NOT return a JWT in data, so the frontend
+    // deliberately does not invent/store a Bearer token.
+    const AUTH_BLOCK_KEY = "trace_api_auth_blocked_until";
+    const REQUEST_TIMEOUT_MS = 60000;
+    let telegramAuthPromise = null;
+
+    function authBlockedUntil() {
+      try { return Number(sessionStorage.getItem(AUTH_BLOCK_KEY) || 0); } catch { return 0; }
+    }
+    function setAuthBlocked(ms) {
+      try { sessionStorage.setItem(AUTH_BLOCK_KEY, String(Date.now() + ms)); } catch {}
+    }
+    function clearAuthBlocked() {
+      try { sessionStorage.removeItem(AUTH_BLOCK_KEY); } catch {}
+    }
+    function secondsUntilAuthAllowed() {
+      return Math.max(0, Math.ceil((authBlockedUntil() - Date.now()) / 1000));
+    }
+
+    async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, {...options, signal: controller.signal});
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          const e = new Error(`API не ответил за ${Math.round(timeoutMs / 1000)} сек.`);
+          e.code = "API_TIMEOUT";
+          e.status = 0;
+          throw e;
+        }
+        const e = new Error("Не удалось подключиться к API. Проверьте адрес API и CORS.");
+        e.code = "NETWORK_ERROR";
+        e.status = 0;
+        e.cause = error;
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
     const api = {
-      async request(path, options = {}) {
+      async request(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
         const headers = new Headers(options.headers || {});
-        if (API_TOKEN && !headers.has("Authorization")) {
-          headers.set("Authorization", `Bearer ${API_TOKEN}`);
-        }
         if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
           headers.set("Content-Type", "application/json");
         }
-        let res;
-        try {
-          res = await fetch(API_BASE_URL + path, {
-            ...options,
-            headers,
-            credentials: "include",
-            cache: "no-store",
-            redirect: "follow"
-          });
-        } catch (networkError) {
-          const e = new Error("API не ответил на запрос. Проверьте CORS, доступность Render API и адрес https://apiosintgraphda.onrender.com.");
-          e.code = "NETWORK_ERROR";
-          e.cause = networkError;
-          throw e;
-        }
+
+        const res = await fetchWithTimeout(API_BASE_URL + path, {
+          ...options,
+          headers,
+          credentials: "include",
+          cache: "no-store",
+          redirect: "follow"
+        }, timeoutMs);
+
         let payload = null;
         const contentType = res.headers.get("content-type") || "";
         if (contentType.includes("application/json")) {
           try { payload = await res.json(); } catch {}
         }
-        if (!res.ok) {
+
+        if (!res.ok || payload?.success === false || payload?.ok === false) {
           const err = payload?.error || payload?.detail?.error || {};
-          const e = new Error(err.message || `HTTP ${res.status}`);
-          e.code = err.code || `HTTP_${res.status}`;
+          let message = err.message || payload?.message || `HTTP ${res.status}`;
+
+          if (res.status === 429) {
+            setAuthBlocked(60000);
+            message = "API временно ограничил авторизацию (429). Подождите около минуты и попробуйте снова.";
+          }
+
+          const e = new Error(message);
+          e.code = err.code || payload?.code || `HTTP_${res.status}`;
           e.status = res.status;
           throw e;
         }
-        const data = payload?.data ?? payload;
-        // Some API revisions may return a JWT here. The current API uses
-        // an HttpOnly trace_session cookie, so this is intentionally optional.
-        if (data?.token) setApiToken(data.token);
-        return data;
+
+        return payload?.data ?? payload;
       },
+
       async download(path) {
-        let res;
-        try {
-          res = await fetch(API_BASE_URL + path, {
-            credentials: "include",
-            cache: "no-store"
-          });
-        } catch {
-          throw new Error("Не удалось подключиться к API");
-        }
+        const res = await fetchWithTimeout(API_BASE_URL + path, {
+          credentials: "include",
+          cache: "no-store"
+        }, REQUEST_TIMEOUT_MS);
+
         if (!res.ok) {
           let message = `HTTP ${res.status}`;
           try {
             const payload = await res.json();
             message = payload?.error?.message || payload?.detail?.error?.message || message;
           } catch {}
-          throw new Error(message);
+          const e = new Error(message);
+          e.status = res.status;
+          throw e;
         }
         return res;
       },
+
       auth: {
-        telegram: initData => api.request("/api/auth/telegram", {
-          method: "POST",
-          body: JSON.stringify({ initData })
-        }),
+        // Single-flight: concurrent bootstrap/retry calls share one request.
+        telegram: async initData => {
+          if (telegramAuthPromise) return telegramAuthPromise;
+
+          const wait = secondsUntilAuthAllowed();
+          if (wait > 0) {
+            const e = new Error(`Авторизация временно ограничена. Подождите ${wait} сек.`);
+            e.code = "AUTH_RATE_LIMITED";
+            e.status = 429;
+            throw e;
+          }
+
+          if (!initData) {
+            const e = new Error("Telegram initData отсутствует. Откройте приложение через Telegram.");
+            e.code = "NO_TELEGRAM_INIT_DATA";
+            throw e;
+          }
+
+          telegramAuthPromise = api.request("/api/auth/telegram", {
+            method: "POST",
+            body: JSON.stringify({initData})
+          }).then(data => {
+            clearAuthBlocked();
+            return data;
+          }).finally(() => {
+            telegramAuthPromise = null;
+          });
+
+          return telegramAuthPromise;
+        },
         me: () => api.request("/api/auth/me"),
-        logout: async () => { try { return await api.request("/api/auth/logout", { method: "POST" }); } finally { setApiToken(""); } }
+        logout: () => api.request("/api/auth/logout", {method:"POST"})
       },
+
       graphs: {
         list: (page=1, limit=10) => api.request(`/api/graphs?page=${page}&limit=${limit}`),
         get: id => api.request(`/api/graphs/${encodeURIComponent(id)}`),
         create: body => api.request("/api/graphs", {method:"POST", body:JSON.stringify(body)}),
         patch: (id, body) => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"PATCH", body:JSON.stringify(body)}),
         sync: graph => api.request("/api/graphs/sync", {method:"PUT", body:JSON.stringify({
-          id: graph.id, title: graph.title, name: graph.title,
-          createdAt: graph.createdAt, updatedAt: graph.updatedAt,
-          nodes: graph.nodes || [], edges: graph.edges || [],
-          visibility: graph.visibility || "private",
-          published: !!graph.published, pinned: !!graph.pinned
+          id:graph.id, title:graph.title, name:graph.title,
+          createdAt:graph.createdAt, updatedAt:graph.updatedAt,
+          nodes:graph.nodes || [], edges:graph.edges || [],
+          visibility:graph.visibility || "private",
+          published:!!graph.published, pinned:!!graph.pinned
         })}),
         remove: id => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"DELETE"}),
         removeAll: () => api.request("/api/graphs", {method:"DELETE"}),
@@ -789,42 +844,53 @@
       state.reports = state.adminData.reports;
     }
 
+    async function ensureAuthenticated() {
+      const initData = TELEGRAM_WEBAPP?.initData || "";
+
+      // Reuse the HttpOnly trace_session cookie first.
+      // This avoids POST /api/auth/telegram on every bootstrap.
+      try {
+        const me = await api.auth.me();
+        return {user: me, settings: me?.settings || {}};
+      } catch (e) {
+        if (e.status !== 401 && e.code !== "UNAUTHORIZED") throw e;
+      }
+
+      if (!initData) {
+        throw new Error("Откройте приложение из Telegram, чтобы выполнить вход.");
+      }
+
+      const wait = secondsUntilAuthAllowed();
+      if (wait > 0) {
+        const e = new Error(`API временно ограничил авторизацию. Подождите ${wait} сек.`);
+        e.code = "AUTH_RATE_LIMITED";
+        e.status = 429;
+        throw e;
+      }
+
+      return await api.auth.telegram(initData);
+    }
+
     async function bootstrap() {
       state.loading = true;
       state.ready = false;
+
       try {
-        if (!API_BASE_URL) throw new Error("API не настроен");
-
-        // Telegram Mini App / Web App: initialize the bridge first.
-        if (TELEGRAM_WEBAPP) {
-          try { TELEGRAM_WEBAPP.ready(); } catch {}
-          try { TELEGRAM_WEBAPP.expand(); } catch {}
-          try { TELEGRAM_WEBAPP.setHeaderColor?.("#090d18"); } catch {}
-          try { TELEGRAM_WEBAPP.setBackgroundColor?.("#090d18"); } catch {}
+        if (!API_BASE_URL || API_BASE_URL.includes("YOUR-API-DOMAIN")) {
+          throw new Error("Укажите API_BASE_URL в HTML");
+        }
+        if (!TELEGRAM_WEBAPP?.initData) {
+          throw new Error("Откройте Web App внутри Telegram");
         }
 
-        // IMPORTANT: authenticate first when Telegram initData is available.
-        // Do not call /api/auth/me before this: a fresh Web App has no session
-        // yet, so /api/auth/me is expected to return 401.
-        let auth = null;
-        const initData = TELEGRAM_WEBAPP?.initData || "";
+        try { TELEGRAM_WEBAPP.ready(); } catch {}
+        try { TELEGRAM_WEBAPP.expand(); } catch {}
+        try { TELEGRAM_WEBAPP.setHeaderColor?.("#090d18"); } catch {}
+        try { TELEGRAM_WEBAPP.setBackgroundColor?.("#090d18"); } catch {}
 
-        if (initData) {
-          auth = await api.auth.telegram(initData);
-        } else {
-          // Normal browser reload can reuse the HttpOnly trace_session cookie.
-          try {
-            const me = await api.auth.me();
-            auth = { user: me, settings: me?.settings || {} };
-          } catch (meError) {
-            if (meError.status === 401 || meError.code === "UNAUTHORIZED") {
-              throw new Error("Откройте приложение из Telegram, чтобы выполнить вход.");
-            }
-            throw meError;
-          }
-        }
+        const auth = await ensureAuthenticated();
+        if (!auth?.user) throw new Error("API не вернул данные пользователя.");
 
-        if (!auth?.user) throw new Error("API не вернул данные пользователя");
         state.user = auth.user;
         state.settings = {...defaultSettings, ...(auth.settings || {}), ...(auth.user.settings || {})};
 
@@ -843,9 +909,44 @@
     }
 
     function renderFatal(error) {
-      const message = error?.message || "Не удалось подключиться к API";
-      document.getElementById("app").innerHTML = `<div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text)"><div class="card" style="max-width:560px;padding:28px;text-align:center"><div class="eyebrow">TRACE / API</div><h1>Не удалось открыть приложение</h1><p class="subtitle">${esc(message)}</p><button class="primary-btn" id="retry-api" style="margin-top:20px">Повторить</button></div></div>`;
-      $("#retry-api")?.addEventListener("click", bootstrap);
+      const status = error?.status;
+      const wait = (status === 429 || error?.code === "AUTH_RATE_LIMITED")
+        ? Math.max(1, secondsUntilAuthAllowed())
+        : 0;
+
+      document.getElementById("app").innerHTML =
+        `<div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text)">
+          <div class="card" style="max-width:560px;padding:28px;text-align:center">
+            <div class="eyebrow">TRACE / API</div>
+            <h1>Не удалось открыть приложение</h1>
+            <p class="subtitle">${esc(error?.message || "Не удалось подключиться к API")}</p>
+            <button class="primary-btn" id="retry-api" style="margin-top:20px">
+              ${wait ? `Повторить через ${wait} сек.` : "Повторить"}
+            </button>
+          </div>
+        </div>`;
+
+      const btn = $("#retry-api");
+      if (!btn) return;
+
+      if (wait) {
+        let left = wait;
+        btn.disabled = true;
+        const timer = setInterval(() => {
+          left--;
+          if (left <= 0) {
+            clearInterval(timer);
+            btn.disabled = false;
+            btn.textContent = "Повторить";
+          } else {
+            btn.textContent = `Повторить через ${left} сек.`;
+          }
+        }, 1000);
+      }
+
+      btn.addEventListener("click", () => {
+        if (!btn.disabled) bootstrap();
+      });
     }
 
     function currentGraph() {
