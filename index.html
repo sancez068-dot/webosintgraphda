@@ -506,14 +506,8 @@
     // Example: https://trace-api.example.com
     // The API must include the exact static-site origin in ALLOWED_ORIGINS.
     // ============================================================
-    const API_BASE_URL = (
-      document.querySelector('meta[name="trace-api"]')?.content ||
-      new URLSearchParams(location.search).get("api") ||
-      "https://apiosintgraphda.onrender.com"
-    ).replace(/\/+$/, "");
-
+    const API_BASE_URL = "https://apiosintgraphda.onrender.com".replace(/\/+$/, "");
     const TELEGRAM_WEBAPP = window.Telegram?.WebApp || null;
-
     const REQUEST_TIMEOUT_MS = 60000;
     let authInFlight = null;
     let bootInFlight = null;
@@ -524,98 +518,115 @@
       if (typeof tg?.initData === "string" && tg.initData) return tg.initData;
       const hash = String(location.hash || "");
       const match = hash.match(/(?:^|[#&])tgWebAppData=([^&]*)/);
-      if (match) {
-        try { return decodeURIComponent(match[1]); } catch {}
-      }
+      if (match) { try { return decodeURIComponent(match[1]); } catch {} }
       return "";
     }
 
-    async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        return await fetch(url, {...options, signal: controller.signal});
-      } finally {
-        clearTimeout(timer);
-      }
+    function xhrRequest(path, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(options.method || "GET", API_BASE_URL + path, true);
+        xhr.withCredentials = true;
+        xhr.timeout = timeoutMs;
+        const headers = options.headers || {};
+        Object.keys(headers).forEach(k => xhr.setRequestHeader(k, headers[k]));
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.onload = () => {
+          let payload = null;
+          const ct = xhr.getResponseHeader("content-type") || "";
+          if (ct.includes("application/json") || xhr.responseText) {
+            try { payload = JSON.parse(xhr.responseText); } catch {}
+          }
+          if (xhr.status >= 200 && xhr.status < 300 && payload?.ok !== false && payload?.success !== false) {
+            resolve(payload?.data ?? payload);
+            return;
+          }
+          const err = payload?.error || payload?.detail?.error || {};
+          const e = new Error(err.message || payload?.message || `HTTP ${xhr.status}`);
+          e.status = xhr.status;
+          e.code = err.code || payload?.code || `HTTP_${xhr.status}`;
+          reject(e);
+        };
+        xhr.onerror = () => {
+          const e = new Error("Браузер не смог получить ответ API. Проверьте CORS и cookie-сессию.");
+          e.code = "NETWORK_ERROR";
+          e.status = 0;
+          reject(e);
+        };
+        xhr.ontimeout = () => {
+          const e = new Error(`API не ответил за ${Math.round(timeoutMs / 1000)} сек.`);
+          e.code = "API_TIMEOUT";
+          e.status = 0;
+          reject(e);
+        };
+        xhr.onabort = () => {
+          const e = new Error("Запрос к API был прерван.");
+          e.code = "API_ABORTED";
+          e.status = 0;
+          reject(e);
+        };
+        let body = options.body;
+        if (body && typeof body !== "string" && !(body instanceof FormData) && !(body instanceof Blob)) {
+          body = JSON.stringify(body);
+        }
+        if (body && !(body instanceof FormData) && !(body instanceof Blob) && !Object.keys(headers).some(k => k.toLowerCase() === "content-type")) {
+          xhr.setRequestHeader("Content-Type", "application/json");
+        }
+        xhr.send(body ?? null);
+      });
     }
 
-
     const api = {
-      async request(path, options = {}) {
-        const headers = new Headers(options.headers || {});
-        if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
-          headers.set("Content-Type", "application/json");
-        }
-        let res;
-        try {
-          res = await fetch(API_BASE_URL + path, {
-            ...options,
-            headers,
-            credentials: "include",
-            cache: "no-store",
-            redirect: "follow"
-          });
-        } catch (networkError) {
-          const e = new Error("Не удалось подключиться к API. Проверьте адрес API и CORS.");
-          e.code = "NETWORK_ERROR";
-          e.cause = networkError;
-          throw e;
-        }
-        let payload = null;
-        const contentType = res.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          try { payload = await res.json(); } catch {}
-        }
-        if (!res.ok) {
-          const err = payload?.error || payload?.detail?.error || {};
-          const e = new Error(err.message || `HTTP ${res.status}`);
-          e.code = err.code || `HTTP_${res.status}`;
-          e.status = res.status;
-          throw e;
-        }
-        return payload?.data ?? payload;
+      request(path, options = {}) {
+        return xhrRequest(path, options, REQUEST_TIMEOUT_MS);
       },
-      async download(path) {
-        let res;
-        try {
-          res = await fetch(API_BASE_URL + path, {
-            credentials: "include",
-            cache: "no-store"
-          });
-        } catch {
-          throw new Error("Не удалось подключиться к API");
-        }
-        if (!res.ok) {
-          let message = `HTTP ${res.status}`;
-          try {
-            const payload = await res.json();
-            message = payload?.error?.message || payload?.detail?.error?.message || message;
-          } catch {}
-          throw new Error(message);
-        }
-        return res;
+      download(path) {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", API_BASE_URL + path, true);
+          xhr.withCredentials = true;
+          xhr.timeout = REQUEST_TIMEOUT_MS;
+          xhr.responseType = "blob";
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve(xhr);
+            else reject(new Error(`HTTP ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error("Не удалось подключиться к API"));
+          xhr.ontimeout = () => reject(new Error("API не ответил вовремя"));
+          xhr.send();
+        });
       },
       auth: {
-        telegram: initData => api.request("/api/auth/telegram", {
-          method: "POST",
-          body: JSON.stringify({ initData })
-        }),
+        telegram(initData) {
+          if (authInFlight) return authInFlight;
+          const wait = authRetryAfter - Date.now();
+          if (wait > 0) {
+            const e = new Error(`API временно ограничил авторизацию. Подождите ${Math.ceil(wait / 1000)} сек.`);
+            e.status = 429; e.code = "AUTH_RATE_LIMITED"; throw e;
+          }
+          if (!initData) {
+            const e = new Error("Telegram initData не получен. Откройте приложение через Telegram.");
+            e.status = 401; e.code = "NO_TELEGRAM_INIT_DATA"; throw e;
+          }
+          authInFlight = xhrRequest("/api/auth/telegram", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({initData})
+          }).catch(e => {
+            if (e.status === 429) authRetryAfter = Date.now() + 60000;
+            throw e;
+          }).finally(() => { authInFlight = null; });
+          return authInFlight;
+        },
         me: () => api.request("/api/auth/me"),
-        logout: () => api.request("/api/auth/logout", { method: "POST" })
+        logout: () => api.request("/api/auth/logout", {method:"POST"})
       },
       graphs: {
         list: (page=1, limit=10) => api.request(`/api/graphs?page=${page}&limit=${limit}`),
         get: id => api.request(`/api/graphs/${encodeURIComponent(id)}`),
-        create: body => api.request("/api/graphs", {method:"POST", body:JSON.stringify(body)}),
-        patch: (id, body) => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"PATCH", body:JSON.stringify(body)}),
-        sync: graph => api.request("/api/graphs/sync", {method:"PUT", body:JSON.stringify({
-          id: graph.id, title: graph.title, name: graph.title,
-          createdAt: graph.createdAt, updatedAt: graph.updatedAt,
-          nodes: graph.nodes || [], edges: graph.edges || [],
-          visibility: graph.visibility || "private",
-          published: !!graph.published, pinned: !!graph.pinned
-        })}),
+        create: body => api.request("/api/graphs", {method:"POST", body}),
+        patch: (id, body) => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"PATCH", body}),
+        sync: graph => api.request("/api/graphs/sync", {method:"PUT", body:{id:graph.id,title:graph.title,name:graph.title,createdAt:graph.createdAt,updatedAt:graph.updatedAt,nodes:graph.nodes||[],edges:graph.edges||[],visibility:graph.visibility||"private",published:!!graph.published,pinned:!!graph.pinned}}),
         remove: id => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"DELETE"}),
         removeAll: () => api.request("/api/graphs", {method:"DELETE"}),
         publish: id => api.request(`/api/graphs/${encodeURIComponent(id)}/publish`, {method:"POST"}),
@@ -630,26 +641,16 @@
       },
       feed: {
         list: (page=1, limit=10, sort="popular") => api.request(`/api/feed?page=${page}&limit=${limit}&sort=${sort}`),
-        sync: items => api.request("/api/feed/sync", {method:"PUT", body:JSON.stringify({items})})
+        sync: items => api.request("/api/feed/sync", {method:"PUT", body:{items}})
       },
-      favorites: {
-        list: (page=1, limit=10) => api.request(`/api/favorites?page=${page}&limit=${limit}`)
-      },
-      reports: {
-        create: body => api.request("/api/reports", {method:"POST", body:JSON.stringify(body)})
-      },
-      settings: {
-        get: () => api.request("/api/settings"),
-        patch: body => api.request("/api/settings", {method:"PATCH", body:JSON.stringify(body)})
-      },
-      media: {
-        upload: formData => api.request("/api/media", {method:"POST", body:formData}),
-        remove: id => api.request(`/api/media/${encodeURIComponent(id)}`, {method:"DELETE"})
-      },
+      favorites: { list: (page=1, limit=10) => api.request(`/api/favorites?page=${page}&limit=${limit}`) },
+      reports: { create: body => api.request("/api/reports", {method:"POST", body}) },
+      settings: { get: () => api.request("/api/settings"), patch: body => api.request("/api/settings", {method:"PATCH", body}) },
+      media: { upload: formData => api.request("/api/media", {method:"POST", body:formData}), remove: id => api.request(`/api/media/${encodeURIComponent(id)}`, {method:"DELETE"}) },
       admin: {
         stats: () => api.request("/api/admin/stats"),
-        users: (page=1, limit=50) => api.request(`/api/admin/users?page=${page}&limit=${limit}`),
-        reports: (page=1, limit=50, status="open") => api.request(`/api/admin/reports?page=${page}&limit=${limit}&status=${encodeURIComponent(status)}`),
+        users: (page=1,limit=50) => api.request(`/api/admin/users?page=${page}&limit=${limit}`),
+        reports: (page=1,limit=50,status="open") => api.request(`/api/admin/reports?page=${page}&limit=${limit}&status=${encodeURIComponent(status)}`),
         reportGraph: id => api.request(`/api/admin/reports/${id}/graph`),
         resolve: id => api.request(`/api/admin/reports/${id}/resolve`, {method:"POST"}),
         reject: id => api.request(`/api/admin/reports/${id}/reject`, {method:"POST"}),
