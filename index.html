@@ -505,7 +505,12 @@
     // Example: https://trace-api.example.com
     // The API must include the exact static-site origin in ALLOWED_ORIGINS.
     // ============================================================
-    const API_BASE_URL = "https://apiosintgraphda.onrender.com".replace(/\/+$/, "");
+    const API_BASE_URL = (
+      document.querySelector('meta[name="trace-api"]')?.content ||
+      new URLSearchParams(location.search).get("api") ||
+      "https://apiosintgraphda.onrender.com"
+    ).replace(/\/+$/, "");
+
     const TELEGRAM_WEBAPP = window.Telegram?.WebApp || null;
 
     const api = {
@@ -514,15 +519,27 @@
         if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
           headers.set("Content-Type", "application/json");
         }
-        const res = await fetch(API_BASE_URL + path, {
-          ...options,
-          headers,
-          credentials: "include",
-          cache: "no-store"
-        });
+        let res;
+        try {
+          res = await fetch(API_BASE_URL + path, {
+            ...options,
+            headers,
+            credentials: "include",
+            cache: "no-store",
+            redirect: "follow"
+          });
+        } catch (networkError) {
+          const e = new Error("Не удалось подключиться к API. Проверьте адрес API и CORS.");
+          e.code = "NETWORK_ERROR";
+          e.cause = networkError;
+          throw e;
+        }
         let payload = null;
-        try { payload = await res.json(); } catch {}
-        if (!res.ok || payload?.success === false) {
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          try { payload = await res.json(); } catch {}
+        }
+        if (!res.ok) {
           const err = payload?.error || payload?.detail?.error || {};
           const e = new Error(err.message || `HTTP ${res.status}`);
           e.code = err.code || `HTTP_${res.status}`;
@@ -530,6 +547,26 @@
           throw e;
         }
         return payload?.data ?? payload;
+      },
+      async download(path) {
+        let res;
+        try {
+          res = await fetch(API_BASE_URL + path, {
+            credentials: "include",
+            cache: "no-store"
+          });
+        } catch {
+          throw new Error("Не удалось подключиться к API");
+        }
+        if (!res.ok) {
+          let message = `HTTP ${res.status}`;
+          try {
+            const payload = await res.json();
+            message = payload?.error?.message || payload?.detail?.error?.message || message;
+          } catch {}
+          throw new Error(message);
+        }
+        return res;
       },
       auth: {
         telegram: initData => api.request("/api/auth/telegram", {
@@ -736,20 +773,43 @@
     }
 
     async function bootstrap() {
+      state.loading = true;
+      state.ready = false;
       try {
-        if (!API_BASE_URL || API_BASE_URL.includes("YOUR-API-DOMAIN")) {
-          throw new Error("Укажите API_BASE_URL в HTML");
+        if (!API_BASE_URL) throw new Error("API не настроен");
+
+        // Telegram Mini App / Web App: initialize the bridge first.
+        if (TELEGRAM_WEBAPP) {
+          try { TELEGRAM_WEBAPP.ready(); } catch {}
+          try { TELEGRAM_WEBAPP.expand(); } catch {}
+          try { TELEGRAM_WEBAPP.setHeaderColor?.("#090d18"); } catch {}
+          try { TELEGRAM_WEBAPP.setBackgroundColor?.("#090d18"); } catch {}
         }
-        if (!TELEGRAM_WEBAPP?.initData) {
-          throw new Error("Откройте Web App внутри Telegram");
+
+        // A session cookie survives page reloads. This also makes the same
+        // static index usable in a normal browser after Telegram login.
+        let auth = null;
+        try {
+          const me = await api.auth.me();
+          auth = { user: me, settings: me?.settings || {} };
+        } catch (meError) {
+          const initData = TELEGRAM_WEBAPP?.initData || "";
+          if (!initData) {
+            if (meError.status === 401 || meError.code === "UNAUTHORIZED") {
+              throw new Error("Откройте приложение из Telegram, чтобы выполнить вход.");
+            }
+            throw meError;
+          }
+          auth = await api.auth.telegram(initData);
         }
-        TELEGRAM_WEBAPP.ready();
-        try { TELEGRAM_WEBAPP.expand(); } catch {}
-        const auth = await api.auth.telegram(TELEGRAM_WEBAPP.initData);
+
+        if (!auth?.user) throw new Error("API не вернул данные пользователя");
         state.user = auth.user;
-        state.settings = {...defaultSettings, ...(auth.settings || {})};
+        state.settings = {...defaultSettings, ...(auth.settings || {}), ...(auth.user.settings || {})};
+
         await Promise.all([loadGraphs(), loadFeed(), loadFavorites()]);
         if (state.user.role === "admin") await loadAdminData();
+
         state.ready = true;
         state.loading = false;
         applyTheme();
@@ -849,7 +909,7 @@
       ];
       return `<div class="shell">
         <aside class="sidebar">
-          <div class="brand"><div class="brand-mark">T</div><div class="brand-copy"><div class="brand-name">TRACE</div><div class="brand-sub">osint graph demo</div></div></div>
+          <div class="brand"><div class="brand-mark">T</div><div class="brand-copy"><div class="brand-name">TRACE</div><div class="brand-sub">osint graph</div></div></div>
           <nav class="nav">${nav.map(([id, icon, label]) => `<button class="nav-btn ${state.view === id ? "active" : ""}" data-nav="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join("")}</nav>
           <div class="sidebar-bottom"></div>
         </aside>
@@ -1091,103 +1151,28 @@
       else if (action === "demo-user") { const row = btn.closest("tr"); const cells = row ? row.querySelectorAll("td") : []; state.modal={type:"demo-user",user:{name:cells[0]?.innerText||"Demo user",role:cells[1]?.innerText||"Analyst",posts:cells[2]?.innerText||"0"}}; renderModal(); }
     }
     function openAdminReportActions(reportId) { state.modal={type:"report-actions",reportId}; renderModal(); }
-    function resolveReport(reportId, status="resolved") { const r=state.reports.find(x=>x.id===reportId); if(!r)return; r.status=status; save(STORAGE.reports,state.reports); closeModal(); if(state.view==="admin" && state.admin.section==="moderation") render(); else if(state.view==="feed") refreshFeedUI({animate:true}); toast(t("saved")); }
-    function deleteReportedGraph(reportId) {
-      const r=state.reports.find(x=>x.id===reportId); if(!r)return;
-      const post=state.feed.find(p=>p.id===r.postId);
-      const graphId=r.graphId || post?.graphId;
-      if(graphId) state.graphs=state.graphs.filter(g=>g.id!==graphId);
-      state.feed=state.feed.filter(p=>p.id!==r.postId && (!graphId || p.graphId!==graphId));
-      r.status="resolved";
-      saveGraphs(); save(STORAGE.feed,state.feed); save(STORAGE.reports,state.reports);
-      closeModal(); render(); toast(t("deleted"));
-    }
-
-    function publishCurrentGraph() {
-      const graph = getGraph(state.editingGraphId);
-      if (!graph) return;
-      const existing = state.feed.find(p => p.graphId === graph.id && p.local);
-      const snapshot = clone(graph);
-      graph.published = true;
-      graph.publishedAt = existing?.createdAt || now();
-      graph.updatedAt = now();
-      if (existing) {
-        existing.title = graph.title;
-        existing.graph = snapshot;
-        existing.createdAt = existing.createdAt || now();
-      } else {
-        state.feed.unshift({
-          id: uid("post"), graphId: graph.id, title: graph.title, author: "Вы", initials: "В",
-          createdAt: now(), likes: 0, dislikes: 0, graph: snapshot, local: true, pinned: !!graph.pinned
-        });
-      }
-      saveGraphs();
-      save(STORAGE.feed, state.feed);
-      const btn = $("[data-action=\"publish-graph\"]");
-      if (btn) {
-        btn.classList.add("active");
-        setTimeout(() => btn.classList.remove("active"), 260);
-      }
-      toast(existing ? t("publicationUpdated") : t("published"));
-    }
-
-    function toggleFeedPin(id) {
-      let graph = getGraph(id);
-      let post = null;
-      if (!graph) { post = state.feed.find(p => p.id === id); graph = post?.graph; }
-      if (!graph) return;
-      const next = !(post?.pinned ?? graph.pinned ?? false);
-      graph.pinned = next;
-      graph.updatedAt = now();
-      if (post) {
-        post.pinned = next;
-        post.graph = clone(graph);
-        const localGraph = getGraph(post.graphId);
-        if (localGraph) { localGraph.pinned = next; localGraph.updatedAt = graph.updatedAt; saveGraphs(); }
-      } else {
-        const existing = state.feed.find(p => p.graphId === graph.id && p.local);
-        if (next && !existing) state.feed.unshift({id:uid("post"),graphId:graph.id,title:graph.title,author:"Вы",initials:"В",createdAt:now(),likes:0,dislikes:0,graph:clone(graph),local:true,pinned:true});
-        if (!next && existing) state.feed=state.feed.filter(p=>p.id!==existing.id);
-        if (getGraph(graph.id)) saveGraphs();
-      }
-      save(STORAGE.feed,state.feed);
-      if (state.view === "feed") refreshFeedUI({animate:true});
-      else render();
-      toast(next?t("pinFeed"):t("unpinFeed"));
-    }
-
-    function toggleSavedPost(postId) {
-      if (!state.feed.some(p => p.id === postId)) return;
-      if (state.savedPosts[postId]) delete state.savedPosts[postId]; else state.savedPosts[postId] = true;
-      save(STORAGE.savedPosts, state.savedPosts);
-      if (state.view === "feed") refreshFeedUI({animate:true});
-      toast(state.savedPosts[postId] ? t("saved") : t("unsavePost"));
-    }
-
-    async function sharePost(postId) {
-      const post = state.feed.find(p => p.id === postId); if (!post) return;
-      const text = `${post.title} — TRACE`;
+    async function resolveReport(reportId, status="resolved") {
       try {
-        if (navigator.share) await navigator.share({title: post.title, text});
-        else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
-        else { const area=document.createElement("textarea"); area.value=text; document.body.append(area); area.select(); document.execCommand("copy"); area.remove(); }
-        toast(t("copied"));
-      } catch {}
+        await (status === "resolved" ? api.admin.resolve(reportId) : api.admin.reject(reportId));
+        state.reports = state.reports.filter(r => r.id !== Number(reportId));
+        state.adminData.reports = state.reports;
+        closeModal();
+        render();
+        toast(t("saved"));
+      } catch (e) { toast(e.message || "Не удалось обработать жалобу"); }
     }
-
-    function openReport(postId) {
-      const post = state.feed.find(p => p.id === postId); if (!post) return;
-      state.modal = {type:"report", postId}; renderModal();
-    }
-
-    function submitReport(postId) {
-      const post = state.feed.find(p => p.id === postId); if (!post) return;
-      if (state.reports.some(r => r.postId === postId)) { closeModal(); toast(t("reportAlready")); return; }
-      const reason = $("#report-reason")?.value || "other";
-      const details = $("#report-details")?.value.trim() || "";
-      state.reports.unshift({id:uid("report"),postId,graphId:post.graphId,title:post.title,reason,details,createdAt:now(),status:"pending"});
-      save(STORAGE.reports,state.reports); closeModal();
-      toast(t("reportSent"));
+    async function deleteReportedGraph(reportId) {
+      const r = state.reports.find(x => Number(x.id) === Number(reportId));
+      const graphId = r?.graphId;
+      if (!graphId) return;
+      try {
+        await api.admin.deleteGraph(graphId);
+        state.reports = state.reports.filter(x => Number(x.id) !== Number(reportId));
+        state.adminData.reports = state.reports;
+        state.feed = state.feed.filter(p => p.graphId !== graphId);
+        state.graphs = state.graphs.filter(g => g.id !== graphId);
+        closeModal(); render(); toast(t("deleted"));
+      } catch (e) { toast(e.message || "Не удалось удалить граф"); }
     }
 
     function openPostMenu(postId) {
@@ -1195,14 +1180,17 @@
       state.modal = { type: "post-menu", postId }; renderModal();
     }
 
-    function vote(postId, direction) {
+    async function vote(postId, direction) {
       const post = state.feed.find(item => item.id === postId); if (!post) return;
-      const previous = state.likes[postId] || 0;
-      if (previous === direction) { delete state.likes[postId]; direction = 0; }
-      else state.likes[postId] = direction;
-      if (previous === 1) post.likes--; if (previous === -1) post.dislikes--;
-      if (direction === 1) post.likes++; if (direction === -1) post.dislikes++;
-      saveLikes(); save(STORAGE.feed, state.feed); if (state.view === "feed") refreshFeedUI({animate:false}); else render(); toast(t("saved"));
+      try {
+        const graphId = post.graphId || post.id;
+        const data = await (direction === 1 ? api.graphs.like(graphId) : api.graphs.dislike(graphId));
+        post.likes = Number(data.likes || 0);
+        post.dislikes = Number(data.dislikes || 0);
+        post.userReaction = data.reaction || null;
+        await loadFeed();
+        refreshFeedUI({animate:false});
+      } catch (e) { toast(e.message || "Не удалось поставить оценку"); }
     }
     function bindEditor(readonly) {
       const graph = readonly
@@ -1657,7 +1645,7 @@
       $$("[data-remove-row]").forEach(btn=>btn.addEventListener("click",()=>{const all=$$(".row-editor"); if(all.length>1)btn.parentElement.remove();}));
       $("[data-modal-delete-node]")?.addEventListener("click",()=>{const id=$("[data-modal-delete-node]").dataset.modalDeleteNode; closeModal(); deleteNode(id);});
       $("[data-delete-edge]")?.addEventListener("click",()=>{const graph=getGraph(state.editingGraphId);if(graph){graph.edges=graph.edges.filter(e=>e.id!==$("[data-delete-edge]").dataset.deleteEdge);graph.updatedAt=now();saveGraphs();}closeModal();renderEditor(false);toast(t("deleted"));});
-      $("[data-export='html']")?.addEventListener("click",()=>{downloadGraphHTML();closeModal();toast(t("htmlReady"));});
+      $("[data-export='html']")?.addEventListener("click",async()=>{closeModal();await downloadGraphHTML();});
       $("[data-export='image']")?.addEventListener("click",()=>{downloadGraphImage();closeModal();});
       $("#graph-form")?.addEventListener("submit",event=>{event.preventDefault(); const title=$("#graph-name").value.trim()||"Без названия"; const graphId=state.modal.graphId; if(graphId){const graph=getGraph(graphId);graph.title=title;graph.updatedAt=now();saveGraphs();closeModal();render();toast(t("saved"));}else{const graph=makeGraph(title,0);graph.nodes=[];graph.edges=[];graph.nodes.push({id:uid("node"),type:"ordinary",title:"Первый узел",x:390,y:270,text:"Начните с добавления деталей",rows:[],media:"",collapsed:true});state.graphs.unshift(graph);saveGraphs();closeModal();enterEditor(graph.id,false);}});
       $("#node-form")?.addEventListener("submit",event=>{event.preventDefault(); saveNodeForm();});
@@ -1665,7 +1653,16 @@
       $("#node-type")?.dispatchEvent(new Event("change"));
       const updateBranchPreview=()=>{const p=$("#branch-preview"); if(!p)return; p.innerHTML=`<b>${esc($("#node-title")?.value||"Новый узел")}</b><span>${esc($("#node-text")?.value||"")}</span>`;};
       $("#node-title")?.addEventListener("input",updateBranchPreview); $("#node-text")?.addEventListener("input",updateBranchPreview);
-      $("#node-media-file")?.addEventListener("change",async event=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{$("#node-media").value=reader.result;toast(t("imageReady"));};reader.readAsDataURL(file);});
+      $("#node-media-file")?.addEventListener("change",async event=>{
+        const file=event.target.files?.[0]; if(!file)return;
+        if(file.size > 15 * 1024 * 1024){ toast("Файл больше 15 MB"); return; }
+        try {
+          const form = new FormData(); form.append("file", file, file.name);
+          const media = await api.media.upload(form);
+          $("#node-media").value = media.url || "";
+          toast(t("imageReady"));
+        } catch(e) { toast(e.message || "Не удалось загрузить файл"); }
+      });
     }
     function saveNodeForm() {
       const graph=getGraph(state.editingGraphId), form=$("#node-form"); if(!graph||!form)return;
@@ -1685,12 +1682,21 @@
       graph.updatedAt=now();saveGraphs();closeModal();renderEditor(false);toast(t("saved"));
     }
     function download(name, content, type) { const blob=new Blob([content],{type}), link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000); }
-    function downloadGraphHTML() {
+    async function downloadGraphHTML() {
       const graph=getGraph(state.editingGraphId); if(!graph)return;
-      const payload=JSON.stringify(graph).replace(/</g,"\\u003c");
-      const html=`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(graph.title)}</title><style>html,body{margin:0;height:100%;overflow:hidden;background:#0b1120;color:#edf3ff;font:14px system-ui}header{height:54px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid #26344f;background:#101a30;box-sizing:border-box}h1{font-size:15px}.hint{margin-left:auto;color:#8d9ab5;font-size:11px}#c{position:absolute;inset:54px 0 0;overflow:hidden;background-image:radial-gradient(#344563 1px,transparent 1px);background-size:25px 25px;touch-action:none}#s{position:absolute;inset:0;transform-origin:0 0}.n{position:absolute;transform:translate(-50%,-50%);min-width:140px;max-width:220px;padding:12px;border:1px solid #385175;border-radius:12px;background:#15233d;box-shadow:0 10px 25px #0006;user-select:none;cursor:grab}.k{color:#8d9ab5;font-size:9px;text-transform:uppercase;margin-bottom:7px}.t{font-weight:700}.x{color:#8d9ab5;font-size:11px;line-height:1.4;margin-top:8px}svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}</style></head><body><header><h1>${esc(graph.title)}</h1><span class="hint">Перетаскивание · колесо · нажмите узел</span></header><div id="c"><div id="s"><svg id="e"></svg></div></div><script>const G=${payload},c=document.getElementById("c"),s=document.getElementById("s"),e=document.getElementById("e"),by=Object.fromEntries(G.nodes.map(n=>[n.id,n]));let v={x:0,y:0,z:1},p=null;function draw(){s.style.transform="translate("+v.x+"px,"+v.y+"px) scale("+v.z+")";e.innerHTML=G.edges.map(q=>{let a=by[q.from],b=by[q.to],d=b.x-a.x,be=Math.max(55,Math.abs(d)*.28);return "<path d='M "+a.x+" "+a.y+" C "+(a.x+be)+" "+a.y+", "+(b.x-be)+" "+b.y+", "+b.x+" "+b.y+"' fill='none' stroke='#6ee7d1' stroke-opacity='.6' stroke-width='2'/>"}).join("");s.querySelectorAll(".n").forEach(x=>x.remove());G.nodes.forEach(n=>{let x=document.createElement("div");x.className="n";x.style.left=n.x+"px";x.style.top=n.y+"px";x.innerHTML="<div class='k'>"+n.type+"</div><div class='t'>"+String(n.title).replace(/[<>&]/g,"")+"</div><div class='x'>"+String(n.text||"").replace(/[<>&]/g,"")+"</div>";x.onpointerdown=a=>{a.stopPropagation();let sx=a.clientX,sy=a.clientY,ox=n.x,oy=n.y;x.setPointerCapture(a.pointerId);x.onpointermove=b=>{n.x=ox+(b.clientX-sx)/v.z;n.y=oy+(b.clientY-sy)/v.z;draw()}};x.ondblclick=()=>alert((n.title||"")+"\\n\\n"+(n.text||"")+(n.rows||[]).map(r=>"\\n"+r[0]+": "+r[1]).join(""));s.append(x)})}c.onpointerdown=a=>{p={x:a.clientX,y:a.clientY,ox:v.x,oy:v.y};c.setPointerCapture(a.pointerId)};c.onpointermove=a=>{if(p){v.x=p.ox+a.clientX-p.x;v.y=p.oy+a.clientY-p.y;draw()}};c.onpointerup=()=>p=null;c.onwheel=a=>{a.preventDefault();let r=c.getBoundingClientRect(),f=a.deltaY<0?1.1:.9,n=v.z,nz=Math.max(.3,Math.min(2.6,n*f)),x=a.clientX-r.left,y=a.clientY-r.top;v.x=x-(x-v.x)*(nz/n);v.y=y-(y-v.y)*(nz/n);v.z=nz;draw()};draw();<\/script></body></html>`;
-      download((graph.title||"graph").replace(/[^a-z0-9а-яё]+/gi,"-").toLowerCase()+".html",html,"text/html");
+      try {
+        const res = await api.download(`/api/graphs/${encodeURIComponent(graph.id)}/html`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link=document.createElement("a");
+        link.href=url;
+        link.download=(graph.title||"graph").replace(/[^a-z0-9а-яё]+/gi,"-").toLowerCase()+".html";
+        document.body.append(link); link.click(); link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+        toast(t("htmlReady"));
+      } catch(e) { toast(e.message || "Не удалось скачать HTML"); }
     }
+
     function downloadGraphImage() {
       const graph=getGraph(state.editingGraphId); if(!graph)return;
       const scale=3, width=1200, height=760, svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width*scale}" height="${height*scale}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#0b1120"/><g opacity=".22">${Array.from({length:38},(_,i)=>`<path d="M ${i*32} 0V${height}M 0 ${i*32}H${width}" stroke="#53617e" stroke-width=".5"/>`).join("")}</g><g transform="translate(80 70)">${graph.edges.map(edge=>{const a=graph.nodes.find(n=>n.id===edge.from),b=graph.nodes.find(n=>n.id===edge.to);if(!a||!b)return"";const dx=b.x-a.x,be=Math.max(55,Math.abs(dx)*.28);return `<path d="M${a.x} ${a.y} C${a.x+be} ${a.y},${b.x-be} ${b.y},${b.x} ${b.y}" fill="none" stroke="#6ee7d1" stroke-opacity=".7" stroke-width="3"/>`}).join("")}${graph.nodes.map(n=>`<g transform="translate(${n.x} ${n.y})"><rect x="-95" y="-28" width="190" height="56" rx="12" fill="#162540" stroke="#405a82"/><circle cx="-78" cy="-8" r="5" fill="#6ee7d1"/><text x="-65" y="-4" fill="#8d9ab5" font-family="system-ui" font-size="10">${esc(nodeTypeLabel(n.type))}</text><text x="-78" y="14" fill="#edf3ff" font-family="system-ui" font-size="13" font-weight="700">${esc(n.title).slice(0,25)}</text></g>`).join("")}</g><text x="80" y="${height-30}" fill="#8d9ab5" font-family="system-ui" font-size="12">TRACE / ${esc(graph.title)}</text></svg>`;
