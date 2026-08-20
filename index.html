@@ -4,8 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b1020">
-  <title>TRACE — OSINT Graph</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <title>Trace — OSINT Graph Demo</title>
   <style>
     :root {
       --bg: #090d18;
@@ -420,7 +419,6 @@
       @keyframes toolbar-in { from{opacity:0;transform:translateY(-5px) scale(.96)} to{opacity:1;transform:none} }
     }
 .danger-icon-btn{display:inline-flex;align-items:center;justify-content:center}.danger-icon-btn svg{display:block}</style>
-    <meta name="trace-build" content="2026-08-18-pairing-api-v1">
 </head>
 <body>
   <div class="app-bg"></div>
@@ -493,165 +491,105 @@
         confirm: "Confirm action", sureDelete: "Are you sure?", yesDelete: "Yes, delete", allDeleted: "All graphs deleted",
         admin: "Admin panel", statistics: "Statistics", adminGraphs: "Graphs", moderation: "Moderation", pinned: "Pinned", adminSettings: "Settings",
         demoMode: "Demo mode", demoModeText: "Data is stored only in this browser", totalGraphs: "Total graphs", totalNodes: "Total nodes",
-        totalVotes: "Feed votes", actions: "Actions", connections: "connections", perPage: "per page", workspace: "OSINT WORKSPACE", library: "LIBRARY", community: "COMMUNITY", controlRoom: "CONTROL ROOM", simplePoint: "Simple point", moreDetails: "More details", structuredData: "Structured data", freeNote: "Free note", imageNode: "Image node", dragNodes: "Drag nodes separately from the canvas", role: "Role", storage: "Storage", pin: "Pin", unpin: "Unpin", noPinned: "No pinned graphs",
+        totalVotes: "Feed votes", actions: "Actions", connections: "connections", perPage: "per page", workspace: "OSINT WORKSPACE", library: "LIBRARY", community: "COMMUNITY / DEMO", controlRoom: "CONTROL ROOM / DEMO", simplePoint: "Simple point", moreDetails: "More details", structuredData: "Structured data", freeNote: "Free note", imageNode: "Image node", dragNodes: "Drag nodes separately from the canvas", role: "Role", storage: "Storage", pin: "Pin", unpin: "Unpin", noPinned: "No pinned graphs",
         usersFake: "Demo users", posts: "posts", report: "Report", approve: "Approve", remove: "Hide",
         saved: "Saved", savedItems: "saved graphs", noSaved: "Nothing saved yet", noSavedText: "Save graphs from the feed and they will appear here.", savePost: "Save", unsavePost: "Remove from saved", share: "Share", copied: "Link copied", report: "Report", reportTitle: "Report graph", reportReason: "Reason", reportPlaceholder: "Describe the problem", reportSent: "Report sent", reportAlready: "You already reported this graph", spam: "Spam", abuse: "Rule violation", falseInfo: "False information", other: "Other", deleted: "Deleted", pinFeed: "Pin to feed", unpinFeed: "Unpin from feed", compact: "Compact", comfortable: "Comfortable", branchPreview: "Branch preview", activityOverview: "Activity overview", allUsers: "All users", demoAdministration: "Demo administration", localStorage: "Browser storage", noReports: "No pending reports", reportActions: "Report actions", viewReportedGraph: "Open graph", deleteReportedGraph: "Delete graph", resolveReport: "Close report", rejectReport: "Reject report", reportDetails: "Report details", edgeActions: "Connection actions", edgeFrom: "From", edgeTo: "To", deleteConnection: "Delete connection", noEdge: "Connection not found", demoQueueClear: "Demo moderation queue is clear", imageReady: "Image uploaded", htmlReady: "HTML downloaded", zoomIn: "Zoom in", zoomOut: "Zoom out", center: "Center", rowField: "Field", rowValue: "Value", demoUser: "User profile", publish: "Publish", updatePublication: "Update publication", published: "Graph published", publicationUpdated: "Publication updated"
       }
     };
     const t = key => (labels[state.settings.language] || labels.ru)[key] || key;
 
-    // ============================================================
-    // PRODUCTION API LAYER
-    // Static-site frontend: set this to the absolute URL of your API.
-    // Example: https://trace-api.example.com
-    // The API must include the exact static-site origin in ALLOWED_ORIGINS.
-    // ============================================================
-    const API_BASE_URL = (
-      document.querySelector('meta[name="trace-api"]')?.content ||
-      new URLSearchParams(location.search).get("api") ||
-      "https://apiosintgraphda.onrender.com"
-    ).replace(/\/+$/, "");
+    function demoNodes(offset = 0) {
+      return [
+        { id: uid("node"), type: "ordinary", title: "Иван Иванов", x: 250 + offset, y: 220, text: "Основной профиль расследования", rows: [], media: "", collapsed: true },
+        { id: uid("node"), type: "table", title: "Идентификаторы", x: 530 + offset, y: 130, text: "", rows: [["Город", "Москва"], ["Профиль", "@ivan_i"], ["Статус", "Проверить"]], media: "", collapsed: true },
+        { id: uid("node"), type: "expandable", title: "Связанный аккаунт", x: 550 + offset, y: 340, text: "Найден общий никнейм и совпадение фотографии.", rows: [["Источник", "Открытый канал"], ["Дата", "2025"]], media: "", collapsed: true },
+        { id: uid("node"), type: "text", title: "Наблюдение", x: 180 + offset, y: 430, text: "Человек связан с организацией через общий домен.", rows: [], media: "", collapsed: true }
+      ];
+    }
+    function makeGraph(title, offset = 0) {
+      const nodes = demoNodes(offset);
+      return { id: uid("graph"), title, createdAt: now(), updatedAt: now(), pinned: false, nodes, edges: [
+        { id: uid("edge"), from: nodes[0].id, to: nodes[1].id },
+        { id: uid("edge"), from: nodes[0].id, to: nodes[2].id },
+        { id: uid("edge"), from: nodes[0].id, to: nodes[3].id }
+      ] };
+    }
+    function makeFeed() {
+      const demoGraph = makeGraph("Расследование №1");
+      return [
+        { id: "post_1", graphId: demoGraph.id, title: "Цепочка связанных профилей", author: "Northstar", initials: "N", createdAt: new Date(Date.now() - 86400000 * 2).toISOString(), likes: 34, dislikes: 2, graph: demoGraph },
+        { id: "post_2", graphId: "feed_graph_2", title: "Организационная структура", author: "Data Unit", initials: "D", createdAt: new Date(Date.now() - 86400000 * 5).toISOString(), likes: 21, dislikes: 1, graph: makeGraph("Организация", 45) },
+        { id: "post_3", graphId: "feed_graph_3", title: "Связи пользователя", author: "Open Source Lab", initials: "O", createdAt: new Date(Date.now() - 3600000 * 7).toISOString(), likes: 17, dislikes: 0, graph: makeGraph("Связи пользователя", -25) },
+        { id: "post_4", graphId: "feed_graph_4", title: "Домены и упоминания", author: "Signal Room", initials: "S", createdAt: new Date(Date.now() - 86400000 * 9).toISOString(), likes: 12, dislikes: 3, graph: makeGraph("Домены и упоминания", 80) }
+      ];
+    }
 
-    const TELEGRAM_WEBAPP = window.Telegram?.WebApp || null;
+    /* =========================
+       TRACE PRODUCTION API LAYER
+       =========================
+       Required backend contract:
+       GET  /api/auth/me
+       GET  /api/graphs
+       PUT  /api/graphs/sync            { graphs: [...] }
+       GET  /api/feed
+       PUT  /api/feed/sync              { feed: [...], likes: {...} }
+       GET  /api/favorites
+       PUT  /api/favorites/sync         { savedPosts: {...} }
+       POST /api/reports                { postId, graphId, title, reason, details }
+       GET  /api/admin/stats             (admin)
+       GET  /api/admin/users             (admin)
+       GET  /api/admin/reports           (admin)
+       POST /api/admin/reports/:id/resolve { status }
+       DELETE /api/admin/graphs/:id      (admin)
+       PATCH /api/admin/graphs/:id/pin   { pinned }
+       GET/PATCH /api/settings
 
+       Telegram Mini App/Web App authentication is sent as
+       X-Telegram-Init-Data. The API must verify it server-side.
+    */
+    const API_BASE = (window.TRACE_API_BASE || document.querySelector('meta[name="trace-api-base"]')?.content || "/api").replace(/\/$/, "");
+    const tg = window.Telegram?.WebApp;
+    try { tg?.ready?.(); tg?.expand?.(); } catch (_) {}
     const api = {
       async request(path, options = {}) {
-        const headers = new Headers(options.headers || {});
-        const savedToken = sessionStorage.getItem("trace_graph_api_token") || "";
-        if (savedToken && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${savedToken}`);
-        if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
-          headers.set("Content-Type", "application/json");
-        }
-        let res;
-        try {
-          res = await fetch(API_BASE_URL + path, {
-            ...options,
-            headers,
-            credentials: "include",
-            cache: "no-store",
-            redirect: "follow"
-          });
-        } catch (networkError) {
-          const e = new Error("Не удалось подключиться к API. Проверьте адрес API и CORS.");
-          e.code = "NETWORK_ERROR";
-          e.cause = networkError;
-          throw e;
-        }
-        let payload = null;
-        const contentType = res.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          try { payload = await res.json(); } catch {}
-        }
-        if (!res.ok) {
-          const err = payload?.error || payload?.detail?.error || {};
-          const e = new Error(err.message || `HTTP ${res.status}`);
-          e.code = err.code || `HTTP_${res.status}`;
-          e.status = res.status;
-          throw e;
-        }
-        return payload?.data ?? payload;
+        const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+        const initData = tg?.initData || "";
+        if (initData) headers["X-Telegram-Init-Data"] = initData;
+        const res = await fetch(API_BASE + path, { credentials: "include", ...options, headers });
+        const text = await res.text();
+        let data = null; try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
+        if (!res.ok) throw new Error(data?.message || data?.error || `API ${res.status}`);
+        return data;
       },
-      async download(path) {
-        let res;
-        try {
-          res = await fetch(API_BASE_URL + path, {
-            credentials: "include",
-            cache: "no-store"
-          });
-        } catch {
-          throw new Error("Не удалось подключиться к API");
-        }
-        if (!res.ok) {
-          let message = `HTTP ${res.status}`;
-          try {
-            const payload = await res.json();
-            message = payload?.error?.message || payload?.detail?.error?.message || message;
-          } catch {}
-          throw new Error(message);
-        }
-        return res;
-      },
-      auth: {
-        me: () => api.request("/api/auth/me"),
-        logout: async () => { try { return await api.request("/api/auth/logout", {method:"POST"}); } finally { sessionStorage.removeItem("trace_graph_api_token"); } },
-        linkCreate: () => new Promise((resolve,reject) => {
-          const x=new XMLHttpRequest(); x.open("POST", API_BASE_URL+"/api/auth/link/create", true); x.withCredentials=true; x.timeout=60000;
-          x.setRequestHeader("Content-Type","application/json");
-          x.onload=()=>{let p=null;try{p=JSON.parse(x.responseText)}catch{};if(x.status>=200&&x.status<300)resolve(p?.data??p);else reject(new Error(p?.error?.message||p?.detail?.error?.message||`HTTP ${x.status}`));};
-          x.onerror=()=>reject(new Error("Не удалось создать код привязки")); x.ontimeout=()=>reject(new Error("API не ответил за 60 секунд")); x.send();
-        }),
-        linkStatus: code => api.request(`/api/auth/link/status?code=${encodeURIComponent(code)}`),
-        linkLogin: code => new Promise((resolve,reject) => {
-          const x=new XMLHttpRequest(); x.open("POST", API_BASE_URL+"/api/auth/link/login", true); x.withCredentials=true; x.timeout=60000;
-          x.setRequestHeader("Content-Type","application/json");
-          x.onload=()=>{let p=null;try{p=JSON.parse(x.responseText)}catch{};if(x.status>=200&&x.status<300){const d=p?.data??p;if(d?.token)sessionStorage.setItem("trace_graph_api_token",d.token);resolve(d);}else reject(Object.assign(new Error(p?.error?.message||p?.detail?.error?.message||`HTTP ${x.status}`),{status:x.status,code:p?.error?.code||p?.detail?.error?.code}));};
-          x.onerror=()=>reject(new Error("Не удалось выполнить вход через API")); x.ontimeout=()=>reject(new Error("API не ответил за 60 секунд")); x.send(JSON.stringify({code}));
-        })
-      },
-      graphs: {
-        list: (page=1, limit=10) => api.request(`/api/graphs?page=${page}&limit=${limit}`),
-        get: id => api.request(`/api/graphs/${encodeURIComponent(id)}`),
-        create: body => api.request("/api/graphs", {method:"POST", body:JSON.stringify(body)}),
-        patch: (id, body) => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"PATCH", body:JSON.stringify(body)}),
-        sync: graph => api.request("/api/graphs/sync", {method:"PUT", body:JSON.stringify({
-          id: graph.id, title: graph.title, name: graph.title,
-          createdAt: graph.createdAt, updatedAt: graph.updatedAt,
-          nodes: graph.nodes || [], edges: graph.edges || [],
-          visibility: graph.visibility || "private",
-          published: !!graph.published, pinned: !!graph.pinned
-        })}),
-        remove: id => api.request(`/api/graphs/${encodeURIComponent(id)}`, {method:"DELETE"}),
-        removeAll: () => api.request("/api/graphs", {method:"DELETE"}),
-        publish: id => api.request(`/api/graphs/${encodeURIComponent(id)}/publish`, {method:"POST"}),
-        unpublish: id => api.request(`/api/graphs/${encodeURIComponent(id)}/publish`, {method:"DELETE"}),
-        like: id => api.request(`/api/graphs/${encodeURIComponent(id)}/like`, {method:"POST"}),
-        dislike: id => api.request(`/api/graphs/${encodeURIComponent(id)}/dislike`, {method:"POST"}),
-        favorite: id => api.request(`/api/graphs/${encodeURIComponent(id)}/favorite`, {method:"POST"}),
-        unfavorite: id => api.request(`/api/graphs/${encodeURIComponent(id)}/favorite`, {method:"DELETE"}),
-        pin: id => api.request(`/api/graphs/${encodeURIComponent(id)}/pin`, {method:"POST"}),
-        unpin: id => api.request(`/api/graphs/${encodeURIComponent(id)}/pin`, {method:"DELETE"}),
-        exportHtml: id => API_BASE_URL + `/api/graphs/${encodeURIComponent(id)}/export/html`
-      },
-      feed: {
-        list: (page=1, limit=10, sort="popular") => api.request(`/api/feed?page=${page}&limit=${limit}&sort=${sort}`),
-        sync: items => api.request("/api/feed/sync", {method:"PUT", body:JSON.stringify({items})})
-      },
-      favorites: {
-        list: (page=1, limit=10) => api.request(`/api/favorites?page=${page}&limit=${limit}`)
-      },
-      reports: {
-        create: body => api.request("/api/reports", {method:"POST", body:JSON.stringify(body)})
-      },
-      settings: {
-        get: () => api.request("/api/settings"),
-        patch: body => api.request("/api/settings", {method:"PATCH", body:JSON.stringify(body)})
-      },
-      media: {
-        upload: formData => api.request("/api/media", {method:"POST", body:formData}),
-        remove: id => api.request(`/api/media/${encodeURIComponent(id)}`, {method:"DELETE"})
-      },
-      admin: {
-        stats: () => api.request("/api/admin/stats"),
-        users: (page=1, limit=50) => api.request(`/api/admin/users?page=${page}&limit=${limit}`),
-        reports: (page=1, limit=50, status="open") => api.request(`/api/admin/reports?page=${page}&limit=${limit}&status=${encodeURIComponent(status)}`),
-        reportGraph: id => api.request(`/api/admin/reports/${id}/graph`),
-        resolve: id => api.request(`/api/admin/reports/${id}/resolve`, {method:"POST"}),
-        reject: id => api.request(`/api/admin/reports/${id}/reject`, {method:"POST"}),
-        deleteGraph: id => api.request(`/api/admin/graphs/${encodeURIComponent(id)}`, {method:"DELETE"}),
-        pinGraph: id => api.request(`/api/admin/graphs/${encodeURIComponent(id)}/pin`, {method:"POST"}),
-        unpinGraph: id => api.request(`/api/admin/graphs/${encodeURIComponent(id)}/pin`, {method:"DELETE"})
-      }
+      me: () => api.request("/auth/me"),
+      graphs: () => api.request("/graphs"),
+      syncGraphs: graphs => api.request("/graphs/sync", { method:"PUT", body:JSON.stringify({graphs}) }),
+      feed: () => api.request("/feed"),
+      syncFeed: (feed, likes) => api.request("/feed/sync", { method:"PUT", body:JSON.stringify({feed, likes}) }),
+      favorites: () => api.request("/favorites"),
+      syncFavorites: savedPosts => api.request("/favorites/sync", { method:"PUT", body:JSON.stringify({savedPosts}) }),
+      report: payload => api.request("/reports", { method:"POST", body:JSON.stringify(payload) }),
+      settings: () => api.request("/settings"),
+      saveSettings: settings => api.request("/settings", { method:"PATCH", body:JSON.stringify(settings) }),
+      adminStats: () => api.request("/admin/stats"),
+      adminUsers: () => api.request("/admin/users"),
+      adminReports: () => api.request("/admin/reports"),
+      adminResolveReport: (id,status) => api.request(`/admin/reports/${encodeURIComponent(id)}/resolve`, {method:"POST",body:JSON.stringify({status})}),
+      adminDeleteGraph: id => api.request(`/admin/graphs/${encodeURIComponent(id)}`, {method:"DELETE"}),
+      adminPinGraph: (id,pinned) => api.request(`/admin/graphs/${encodeURIComponent(id)}/pin`, {method:"PATCH",body:JSON.stringify({pinned})})
     };
+    let apiReady = false;
+    let apiLoading = true;
+    let apiError = null;
 
     const defaultSettings = { language: "ru", theme: "dark" };
     const state = {
-      user: null,
       settings: { ...defaultSettings },
+      me: null,
       graphs: [],
       feed: [],
-      favoriteGraphs: [],
-      savedPosts: {},
       likes: {},
+      savedPosts: {},
       reports: [],
       adminData: { stats: null, users: [], reports: [] },
       admin: { section: "stats" },
@@ -662,231 +600,58 @@
       modal: null,
       page: 1,
       feedTab: "popular",
-      feedLayout: localStorage.getItem("trace_osint_feed_layout") || "comfortable",
+      feedLayout: "comfortable",
       connectMode: false,
       connectSource: null,
       sideOpen: false,
       viewport: { x: 0, y: 0, scale: 1 },
       pointer: { mode: null, id: null, startX: 0, startY: 0, originX: 0, originY: 0, nodeX: 0, nodeY: 0 },
       pinch: null,
-      editorSession: 0,
-      ready: false,
-      loading: true
+      editorSession: 0
     };
-
-    function normalizeGraph(g) {
-      if (!g) return null;
-      return {
-        ...g,
-        name: g.name || g.title || "Без названия",
-        title: g.title || g.name || "Без названия",
-        nodes: Array.isArray(g.nodes) ? g.nodes.map(n => ({
-          ...n,
-          rows: Array.isArray(n.rows) ? n.rows : [],
-          media: n.media || "",
-          hidden: !!n.hidden,
-          collapsed: n.collapsed !== false,
-          expandChildren: Array.isArray(n.expandChildren) ? n.expandChildren : []
-        })) : [],
-        edges: Array.isArray(g.edges) ? g.edges.map(e => ({
-          ...e, from: e.from || e.from_node, to: e.to || e.to_node
-        })) : [],
-        visibility: g.visibility || "private",
-        published: !!g.published,
-        pinned: !!g.pinned,
-        likes: Number(g.likes ?? g.likes_count ?? 0),
-        dislikes: Number(g.dislikes ?? g.dislikes_count ?? 0),
-        createdAt: g.createdAt || g.created_at || now(),
-        updatedAt: g.updatedAt || g.updated_at || now()
-      };
+    function save(key, value) {
+      if (key === STORAGE.graphs) return api.syncGraphs(value).catch(e => { apiError=e; toast("Ошибка сохранения графов"); });
+      if (key === STORAGE.feed) return api.syncFeed(value, state.likes).catch(e => { apiError=e; toast("Ошибка синхронизации ленты"); });
+      if (key === STORAGE.likes) return api.syncFeed(state.feed, value).catch(e => { apiError=e; toast("Ошибка синхронизации реакции"); });
+      if (key === STORAGE.savedPosts) return api.syncFavorites(value).catch(e => { apiError=e; toast("Ошибка сохранения избранного"); });
+      if (key === STORAGE.settings) return api.saveSettings(value).catch(e => { apiError=e; toast("Ошибка сохранения настроек"); });
+      return Promise.resolve();
     }
-
-    function normalizeFeedItem(p) {
-      const author = p.author || {};
-      const preview = p.preview || {nodes:[], edges:[]};
-      const graph = p.graph ? normalizeGraph(p.graph) : normalizeGraph({
-        id: p.graph_id || p.id,
-        title: p.title || p.name || "Без названия",
-        createdAt: p.created_at,
-        updatedAt: p.updated_at,
-        nodes: preview.nodes || [],
-        edges: preview.edges || [],
-        published: true,
-        pinned: !!p.pinned,
-        likes: p.likes,
-        dislikes: p.dislikes,
-        visibility: "public"
-      });
-      return {
-        ...p,
-        id: p.id || p.post_id || p.graph_id,
-        postId: p.post_id || p.id || p.graph_id,
-        graphId: p.graph_id || p.id,
-        title: p.title || p.name || graph?.title || "Без названия",
-        author: typeof author === "string" ? author : (author.username ? "@" + author.username : author.first_name || "TRACE"),
-        authorData: typeof author === "object" ? author : {},
-        initials: ((author.first_name || author.username || "T")[0] || "T").toUpperCase(),
-        createdAt: p.created_at || p.createdAt || now(),
-        updatedAt: p.updated_at || p.updatedAt || p.created_at || now(),
-        likes: Number(p.likes || 0),
-        dislikes: Number(p.dislikes || 0),
-        userReaction: p.user_reaction || null,
-        saved: !!p.saved,
-        pinned: !!p.pinned,
-        graph
-      };
-    }
-
-    function hydrateFeed(data) {
-      const items = (data?.items || []).map(normalizeFeedItem);
-      state.feed = items;
-      state.savedPosts = {};
-      items.forEach(p => { if (p.saved) state.savedPosts[p.id] = true; });
-    }
-
-    async function loadGraphs() {
-      const data = await api.graphs.list(state.page, 10);
-      state.graphs = (data.items || []).map(normalizeGraph);
-      return data;
-    }
-
-    async function loadFeed() {
-      const sort = state.feedTab === "newest" ? "new" : state.feedTab;
-      const data = await api.feed.list(1, 10, sort);
-      hydrateFeed(data);
-      return data;
-    }
-
-    async function loadFavorites() {
-      const data = await api.favorites.list(1, 100);
-      state.favoriteGraphs = (data.items || []).map(normalizeGraph);
-      state.favoriteGraphs.forEach(g => { state.savedPosts[g.id] = true; });
-      return data;
-    }
-
-    async function loadAdminData() {
-      if (state.user?.role !== "admin") return;
-      const [stats, users, reports] = await Promise.all([
-        api.admin.stats(),
-        api.admin.users(1, 100),
-        api.admin.reports(1, 100, "open")
-      ]);
-      state.adminData = {stats, users: users.items || [], reports: (reports.items || []).map(r => ({
-        ...r,
-        id: r.id,
-        graphId: r.graph?.id,
-        title: r.graph?.title || "Без названия",
-        details: r.details || "",
-        reason: r.reason,
-        createdAt: r.created_at,
-        status: r.status
-      }))};
-      state.reports = state.adminData.reports;
-    }
-
-    let pairingCode = "";
-    let pairingExpiresAt = 0;
-    let pairingTimer = null;
-
-    function stopPairingPoll(){ if(pairingTimer) clearInterval(pairingTimer); pairingTimer=null; }
-    function updatePairingTimer(){
-      const el=document.getElementById("pairing-timer"); if(!el)return;
-      const sec=Math.max(0,Math.ceil((pairingExpiresAt-Date.now())/1000));
-      el.textContent=`Код действует ещё ${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`;
-    }
-    function renderPairing(message=""){
-      document.getElementById("app").innerHTML=`<div style="min-height:100vh;display:grid;place-items:center;padding:20px;background:var(--bg);color:var(--text)"><div class="card" style="width:min(560px,100%);padding:28px;text-align:center"><div class="eyebrow">TRACE / ПРИВЯЗКА</div><h1 style="margin:8px 0 10px">Привяжите Telegram</h1><p class="subtitle">Откройте TRACE BOT → «Привязать аккаунт» → отправьте этот код.</p><div style="font-size:32px;font-weight:800;letter-spacing:5px;margin:24px 0;user-select:all">${esc(pairingCode)}</div><button class="primary-btn" id="copy-pairing">Скопировать код</button><button class="secondary-btn" id="new-pairing" style="margin-left:8px">Новый код</button><div id="pairing-timer" class="muted" style="margin-top:16px"></div><div class="muted" style="margin-top:10px">После подтверждения ботом вход выполнится автоматически.</div>${message?`<div style="margin-top:16px">${esc(message)}</div>`:""}</div></div>`;
-      updatePairingTimer();
-      document.getElementById("copy-pairing")?.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(pairingCode);toast("Код скопирован");}catch{toast("Не удалось скопировать код");}});
-      document.getElementById("new-pairing")?.addEventListener("click",()=>createPairing().catch(renderFatal));
-    }
-    async function createPairing(){
-      stopPairingPoll();
-      const r=await api.auth.linkCreate();
-      pairingCode=r?.code||"";
-      if(!pairingCode)throw new Error("API не вернул код привязки");
-      pairingExpiresAt=Date.now()+Number(r.expires_in||300)*1000;
-      renderPairing();
-      pairingTimer=setInterval(checkPairing,2000);
-    }
-    async function checkPairing(){
-      if(!pairingCode)return;
-      if(Date.now()>=pairingExpiresAt){stopPairingPoll();renderPairing("Код истёк. Получите новый код.");return;}
-      updatePairingTimer();
-      try{
-        const st=await api.auth.linkStatus(pairingCode);
-        if(!st?.linked)return;
-        stopPairingPoll();
-        const auth=await api.auth.linkLogin(pairingCode);
-        if(!auth?.user)throw new Error("API не вернул пользователя после привязки");
-        state.user=auth.user; state.settings={...defaultSettings,...(auth.settings||{})};
-        await Promise.all([loadGraphs(),loadFeed(),loadFavorites()]);
-        if(state.user.role==="admin")await loadAdminData();
-        state.ready=true;state.loading=false;applyTheme();render();
-      }catch(e){
-        if(e.status===404 || e.code==="INVALID_PAIRING_CODE"){stopPairingPoll();renderPairing("Код недействителен или истёк");}
+    function saveGraphs() { return save(STORAGE.graphs, state.graphs); }
+    function saveSettings() { return save(STORAGE.settings, state.settings); }
+    function saveLikes() { return save(STORAGE.likes, state.likes); }
+    function saveAdmin() { return Promise.resolve(); }
+    async function bootstrapApi() {
+      apiLoading = true; apiError = null; render();
+      try {
+        const [me, graphs, feed, favorites, settings] = await Promise.all([
+          api.me(), api.graphs(), api.feed(), api.favorites(), api.settings().catch(()=>null)
+        ]);
+        state.me = me?.user || me || null;
+        if (state.me && (state.me.role === "admin" || state.me.is_admin === true)) {
+          const [stats, users, reports] = await Promise.all([api.adminStats().catch(()=>null), api.adminUsers().catch(()=>[]), api.adminReports().catch(()=>[])]);
+          state.adminData = { stats, users: users?.users || users || [], reports: reports?.reports || reports || [] };
+          state.reports = state.adminData.reports;
+        }
+        state.graphs = Array.isArray(graphs) ? graphs : (graphs?.graphs || []);
+        state.feed = Array.isArray(feed) ? feed : (feed?.feed || []);
+        state.savedPosts = favorites?.savedPosts || favorites || {};
+        if (settings) state.settings = { ...defaultSettings, ...(settings.settings || settings) };
+        state.likes = feed?.likes || {};
+        state.reports = [];
+        apiReady = true;
+      } catch (e) {
+        apiError = e;
+        state.me = null; state.graphs=[]; state.feed=[]; state.savedPosts={}; state.likes={};
+      } finally {
+        apiLoading = false; render();
       }
     }
-    async function bootstrap(){
-      state.loading=true;state.ready=false;
-      try{
-        if(!API_BASE_URL)throw new Error("API не настроен");
-        if(TELEGRAM_WEBAPP){try{TELEGRAM_WEBAPP.ready();TELEGRAM_WEBAPP.expand();}catch{}}
-        const token=sessionStorage.getItem("trace_graph_api_token")||"";
-        if(token){try{const me=await api.auth.me();state.user=me;state.settings={...defaultSettings,...(me?.settings||{})};await Promise.all([loadGraphs(),loadFeed(),loadFavorites()]);if(state.user.role==="admin")await loadAdminData();state.ready=true;state.loading=false;applyTheme();render();return;}catch{sessionStorage.removeItem("trace_graph_api_token");}}
-        state.loading=false;
-        await createPairing();
-      }catch(e){state.loading=false;state.ready=false;renderFatal(e);}
-    }
-    function renderFatal(error){
-      const message=error?.message||"Не удалось подключиться к API";
-      document.getElementById("app").innerHTML=`<div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text)"><div class="card" style="max-width:560px;padding:28px;text-align:center"><div class="eyebrow">TRACE / API</div><h1>Не удалось открыть приложение</h1><p class="subtitle">${esc(message)}</p><button class="primary-btn" id="retry-api" style="margin-top:20px">Повторить</button></div></div>`;
-      $("#retry-api")?.addEventListener("click",bootstrap);
-    }
+    function isAdmin() { return state.me?.role === "admin" || state.me?.is_admin === true; }
 
-    function currentGraph() {
-      return state.graphs.find(graph => graph.id === state.editingGraphId || graph.id === state.viewingGraphId);
-    }
-    function getGraph(id) { return state.graphs.find(graph => graph.id === id); }
-    function nodeTypeLabel(type) { return ({ ordinary: t("ordinary"), expandable: t("expandable"), table: t("table"), text: t("text"), media: t("media") })[type] || t("ordinary"); }
     function currentGraph() { return state.graphs.find(graph => graph.id === state.editingGraphId || graph.id === state.viewingGraphId); }
     function getGraph(id) { return state.graphs.find(graph => graph.id === id); }
     function nodeTypeLabel(type) { return ({ ordinary: t("ordinary"), expandable: t("expandable"), table: t("table"), text: t("text"), media: t("media") })[type] || t("ordinary"); }
-
-    const syncTimers = new Map();
-    function syncGraph(graph, delay=350) {
-      if (!graph?.id) return;
-      clearTimeout(syncTimers.get(graph.id));
-      syncTimers.set(graph.id, setTimeout(async () => {
-        try {
-          const saved = normalizeGraph(await api.graphs.sync(graph));
-          const i = state.graphs.findIndex(g => g.id === saved.id);
-          if (i >= 0) state.graphs[i] = saved;
-        } catch (e) {
-          toast(e.message || "Не удалось сохранить граф");
-        } finally {
-          syncTimers.delete(graph.id);
-        }
-      }, delay));
-    }
-    function saveGraphs(graphId = state.editingGraphId) {
-      const graph = graphId ? getGraph(graphId) : null;
-      if (graph) syncGraph(graph);
-    }
-    function saveSettings() {
-      api.settings.patch({language: state.settings.language, theme: state.settings.theme})
-        .catch(e => toast(e.message || "Не удалось сохранить настройки"));
-    }
-    function saveLikes() {}
-    function saveAdmin() {
-      try { localStorage.setItem("trace_admin_section", state.admin.section); } catch {}
-    }
-    async function refreshGraphFromApi(id) {
-      const g = normalizeGraph(await api.graphs.get(id));
-      const i = state.graphs.findIndex(x => x.id === g.id);
-      if (i >= 0) state.graphs[i] = g; else state.graphs.push(g);
-      return g;
-    }
     function initialForGraph(graph) {
       const xs = graph.nodes.map(node => node.x), ys = graph.nodes.map(node => node.y);
       if (!xs.length) return { x: 0, y: 0, scale: 1 };
@@ -913,11 +678,11 @@
     function closeModal() { state.modal = null; resetEditorInteractions(); renderModal(); }
     function confirmDeleteGraph(graphId) {
       const graph = getGraph(graphId); if (!graph) return;
-      state.modal = { type: "confirm", title: t("delete"), text: `"${graph.title}"`, action: async () => { try { await api.graphs.remove(graphId); state.graphs = state.graphs.filter(item => item.id !== graphId); state.favoriteGraphs = state.favoriteGraphs.filter(item => item.id !== graphId); state.modal = null; if (state.editingGraphId === graphId) state.view = "graphs"; render(); toast(t("deleted")); } catch(e){toast(e.message||"Ошибка удаления");} } };
+      state.modal = { type: "confirm", title: t("delete"), text: `"${graph.title}"`, action: () => { state.graphs = state.graphs.filter(item => item.id !== graphId); saveGraphs(); state.modal = null; if (state.editingGraphId === graphId) state.view = "graphs"; render(); toast(t("deleted")); } };
       renderModal();
     }
     function confirmDeleteAll() {
-      state.modal = { type: "confirm", title: t("deleteAll"), text: t("deleteAllText"), action: async () => { try { await api.graphs.removeAll(); state.graphs = []; state.favoriteGraphs=[]; state.modal = null; state.view = "graphs"; render(); toast(t("allDeleted")); } catch(e){toast(e.message||"Ошибка удаления");} } };
+      state.modal = { type: "confirm", title: t("deleteAll"), text: t("deleteAllText"), action: () => { state.graphs = []; saveGraphs(); state.modal = null; state.view = "graphs"; render(); toast(t("allDeleted")); } };
       renderModal();
     }
     function renderShell(content) {
@@ -928,11 +693,11 @@
         <aside class="sidebar">
           <div class="brand"><div class="brand-mark">T</div><div class="brand-copy"><div class="brand-name">TRACE</div><div class="brand-sub">osint graph</div></div></div>
           <nav class="nav">${nav.map(([id, icon, label]) => `<button class="nav-btn ${state.view === id ? "active" : ""}" data-nav="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join("")}</nav>
-          <div class="sidebar-bottom"></div>
+          <div class="sidebar-bottom"><div class="demo-badge"><strong>${state.me?.first_name || state.me?.username || "TRACE"}</strong><span>${state.me?.role === "admin" ? t("admin") : ""}</span></div></div>
         </aside>
         <main class="main">
           <div class="topbar"><div class="breadcrumbs"><b>TRACE</b><span> / ${state.view === "admin" ? t("admin") : state.view === "home" ? t("home") : state.view === "graphs" ? t("graphs") : state.view === "feed" ? t("feed") : state.view === "favorites" ? t("favorites") : t("settings")}</span></div>
-            <div class="top-actions">${state.user?.role==="admin" ? `<button class="ghost-btn" data-action="admin-open">⋮ <span>${t("admin")}</span></button>` : ""}<button class="icon-btn" data-action="theme-toggle" title="${t("theme")}">◐</button></div>
+            <div class="top-actions">${isAdmin() ? `<button class="ghost-btn" data-action="admin-open">${icon("more",18)} <span>${t("admin")}</span></button>` : ""}<button class="icon-btn" data-action="theme-toggle" title="${t("theme")}">${icon("theme",18)}</button></div>
           </div>
           <div class="content">${content}</div>
         </main>
@@ -943,8 +708,10 @@
       applyTheme();
       if (state.view === "editor") { renderEditor(false); return; }
       if (state.view === "viewer") { renderEditor(true); return; }
+      if (state.view === "admin" && !isAdmin()) state.view = "home";
       let content = state.view === "home" ? renderHome() : state.view === "graphs" ? renderGraphs() : state.view === "feed" ? renderFeed() : state.view === "favorites" ? renderFavorites() : state.view === "settings" ? renderSettings() : renderAdmin();
-      $("#app").innerHTML = renderShell(content); bindShell(); renderModal();
+      const apiBanner = apiLoading ? `<div class="api-banner">Подключение к API…</div>` : apiError ? `<div class="api-banner error">Не удалось подключиться к API. Проверьте адрес API и авторизацию Telegram.</div>` : "";
+      $("#app").innerHTML = apiBanner + renderShell(content); bindShell(); renderModal();
     }
     function renderHome() {
       const totalNodes = state.graphs.reduce((sum, graph) => sum + graph.nodes.length, 0);
@@ -952,10 +719,11 @@
       return `<section class="view">
         <div class="page-title"><div><div class="eyebrow">${t("workspace")}</div><h1>${t("welcome")}</h1><p class="subtitle">${t("welcomeText")}</p></div><button class="primary-btn" data-action="create-graph">＋ ${t("create")}</button></div>
         <div class="grid dashboard-grid">
-          <article class="card welcome-card"><div><div class="eyebrow">TRACE / OSINT</div><h2>${t("create")}<br>${t("welcome").toLowerCase()}</h2><p class="subtitle">${state.graphs.length ? `${state.graphs.length} ${t("graphs").toLowerCase()} · ${totalNodes} ${t("branches")}` : t("noGraphsText")}</p></div><div class="welcome-actions"><button class="primary-btn" data-action="create-graph">${t("create")}</button><button class="ghost-btn" data-nav="graphs">${t("openGraphs")} →</button></div></article>
-          <article class="card metric-card"><div><div class="eyebrow">${t("graphs")}</div><div class="metric-number">${state.graphs.length}</div></div><div class="metric-meta">${t("welcomeText")}</div></article>
+          <article class="card welcome-card"><div><div class="eyebrow">TRACE / DEMO</div><h2>${t("create")}<br>${t("welcome").toLowerCase()}</h2><p class="subtitle">${state.graphs.length ? `${state.graphs.length} ${t("graphs").toLowerCase()} · ${totalNodes} ${t("branches")}` : t("noGraphsText")}</p></div><div class="welcome-actions"><button class="primary-btn" data-action="create-graph">${t("create")}</button><button class="ghost-btn" data-nav="graphs">${t("openGraphs")} →</button></div></article>
+          <article class="card metric-card"><div><div class="eyebrow">${t("graphs")}</div><div class="metric-number">${state.graphs.length}</div></div><div class="metric-meta">TRACE API</div></article>
           <article class="card quick-card"><button data-nav="feed"><div><div class="eyebrow">${t("feed")}</div><h3>${t("feedTitle")}</h3><p class="subtitle">${state.feed.length} ${t("posts")}</p></div><span class="quick-icon">↗</span></button></article>
           <article class="card quick-card"><button data-nav="settings"><div><div class="eyebrow">${t("settings")}</div><h3>${t("settingsTitle")}</h3><p class="subtitle">${state.settings.language === "ru" ? "Русский" : "English"} · ${state.settings.theme === "dark" ? t("dark") : state.settings.theme === "light" ? t("light") : t("system")}</p></div><span class="quick-icon">⌘</span></button></article>
+          ${isAdmin() ? `<article class="card quick-card wide"><button data-action="admin-open"><div><div class="eyebrow">${t("admin")}</div><h3>${t("admin")}</h3><p class="subtitle">${t("statistics")}, ${t("moderation").toLowerCase()}, ${t("pinned").toLowerCase()}</p></div><span class="quick-icon">${icon("more",18)}</span></button></article>` : ""}
         </div>
         <div class="section-head"><h2>${t("recent")}</h2><button class="ghost-btn" data-nav="graphs">${t("all")} →</button></div>
         ${recent.length ? `<div class="graph-grid">${recent.map(renderGraphCard).join("")}</div>` : renderEmpty()}
@@ -1000,65 +768,53 @@
       list.classList.toggle('compact', state.feedLayout === 'compact');
     }
     function renderFavorites() {
-      const saved = state.favoriteGraphs || [];
-      const posts = saved.map(g => normalizeFeedItem({
-        id:g.id, graph_id:g.id, title:g.title, created_at:g.createdAt, updated_at:g.updatedAt,
-        likes:g.likes, dislikes:g.dislikes, saved:true, pinned:g.pinned,
-        author:{first_name:"TRACE"}, preview:{nodes:g.nodes,edges:g.edges}
-      }));
-      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("library")}</div><h1>${t("favorites")}</h1><p class="subtitle">${saved.length} ${t("savedItems")}</p></div><button class="ghost-btn" data-nav="feed">${t("feed")} →</button></div>${posts.length ? `<div class="feed-list ${state.feedLayout === "compact" ? "compact" : ""}">${posts.map(renderPost).join("")}</div>` : `<div class="empty"><div class="empty-mark">☆</div><h3>${t("noSaved")}</h3><p>${t("noSavedText")}</p><button class="primary-btn" data-nav="feed">${t("feed")}</button></div>`}</section>`;
+      const saved = state.feed.filter(post => !!state.savedPosts[post.id]);
+      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("library")}</div><h1>${t("favorites")}</h1><p class="subtitle">${saved.length} ${t("savedItems")}</p></div><button class="ghost-btn" data-nav="feed">${t("feed")} →</button></div>${saved.length ? `<div class="feed-list ${state.feedLayout === "compact" ? "compact" : ""}">${saved.map(renderPost).join("")}</div>` : `<div class="empty"><div class="empty-mark">☆</div><h3>${t("noSaved")}</h3><p>${t("noSavedText")}</p><button class="primary-btn" data-nav="feed">${t("feed")}</button></div>`}</section>`;
     }
     function renderFeed() {
       const posts = sortedFeed();
-      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("community")}</div><h1>${t("feedTitle")}</h1><p class="subtitle">${t("welcomeText")}</p></div><div class="feed-layout-tools"><div class="tabs">${[["popular",t("popular")],["recommended",t("recommended")],["newest",t("newest")]].map(([id,label])=>`<button class="tab ${state.feedTab===id?"active":""}" data-feed-tab="${id}">${label}</button>`).join("")}</div><div class="view-toggle"><button class="${state.feedLayout==="comfortable"?"active":""}" data-feed-layout="comfortable" title="${t("comfortable")}">${icon("panel",15)}</button><button class="${state.feedLayout==="compact"?"active":""}" data-feed-layout="compact" title="${t("compact")}">${icon("table",15)}</button></div></div></div><div class="feed-list ${state.feedLayout==="compact"?"compact":""}">${posts.map(renderPost).join("")}</div></section>`;
+      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("community")}</div><h1>${t("feedTitle")}</h1><p class="subtitle">TRACE API</p></div><div class="feed-layout-tools"><div class="tabs">${[["popular",t("popular")],["recommended",t("recommended")],["newest",t("newest")]].map(([id,label])=>`<button class="tab ${state.feedTab===id?"active":""}" data-feed-tab="${id}">${label}</button>`).join("")}</div><div class="view-toggle"><button class="${state.feedLayout==="comfortable"?"active":""}" data-feed-layout="comfortable" title="${t("comfortable")}">${icon("panel",15)}</button><button class="${state.feedLayout==="compact"?"active":""}" data-feed-layout="compact" title="${t("compact")}">${icon("table",15)}</button></div></div></div><div class="feed-list ${state.feedLayout==="compact"?"compact":""}">${posts.map(renderPost).join("")}</div></section>`;
     }
     function renderSettings() {
-      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("settings")}</div><h1>${t("settingsTitle")}</h1><p class="subtitle">${t("welcomeText")}</p></div></div><div class="settings-grid"><div class="card setting-card"><div class="setting-row"><div class="setting-label"><b>${t("language")}</b><span>Русский / English</span></div><select class="select" data-setting="language"><option value="ru" ${state.settings.language==="ru"?"selected":""}>🇷🇺 Русский</option><option value="en" ${state.settings.language==="en"?"selected":""}>🇺🇸 English</option></select></div><div class="setting-row"><div class="setting-label"><b>${t("theme")}</b><span>${t("theme")}</span></div><select class="select" data-setting="theme"><option value="system" ${state.settings.theme==="system"?"selected":""}>${t("system")}</option><option value="dark" ${state.settings.theme==="dark"?"selected":""}>${t("dark")}</option><option value="light" ${state.settings.theme==="light"?"selected":""}>${t("light")}</option></select></div></div><div class="card setting-card danger-zone"><h3>${t("deleteAll")}</h3><p class="subtitle">${t("deleteAllText")}</p><button class="danger-btn" style="margin-top:20px" data-action="delete-all">${t("deleteAll")}</button></div></div></section>`;
+      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("settings")}</div><h1>${t("settingsTitle")}</h1><p class="subtitle">TRACE API</p></div></div><div class="settings-grid"><div class="card setting-card"><div class="setting-row"><div class="setting-label"><b>${t("language")}</b><span>Русский / English</span></div><select class="select" data-setting="language"><option value="ru" ${state.settings.language==="ru"?"selected":""}>🇷🇺 Русский</option><option value="en" ${state.settings.language==="en"?"selected":""}>🇺🇸 English</option></select></div><div class="setting-row"><div class="setting-label"><b>${t("theme")}</b><span>${t("theme")}</span></div><select class="select" data-setting="theme"><option value="system" ${state.settings.theme==="system"?"selected":""}>${t("system")}</option><option value="dark" ${state.settings.theme==="dark"?"selected":""}>${t("dark")}</option><option value="light" ${state.settings.theme==="light"?"selected":""}>${t("light")}</option></select></div><div class="setting-row"><div class="setting-label"><b>API</b><span>TRACE API</span></div><span class="quick-icon">✓</span></div></div><div class="card setting-card danger-zone"><h3>${t("deleteAll")}</h3><p class="subtitle">${t("deleteAllText")}</p><button class="danger-btn" style="margin-top:20px" data-action="delete-all">${t("deleteAll")}</button></div></div></section>`;
     }
     function renderAdmin() {
-      if (state.user?.role !== "admin") { state.view="home"; return render(); }
-      const sections = [["stats",t("statistics")],["users",t("usersFake")],["moderation",t("moderation")],["settings",t("adminSettings")]];
+      const sections = [["stats",t("statistics")],["graphs",t("adminGraphs")],["users",t("usersFake")],["moderation",t("moderation")],["pinned",t("pinned")],["settings",t("adminSettings")]];
       let panel = "";
       if (state.admin.section === "stats") {
-        const s=state.adminData.stats || {};
-        panel = `<div class="admin-stats">
-          <div class="card admin-stat"><span>${t("totalGraphs")} · ${t("allUsers")}</span><strong>${s.graphs ?? "—"}</strong></div>
-          <div class="card admin-stat"><span>${t("totalNodes")} · ${t("allUsers")}</span><strong>${s.nodes ?? "—"}</strong></div>
-          <div class="card admin-stat"><span>${t("totalVotes")}</span><strong>${((s.reports??0))}</strong></div>
-          <div class="card admin-stat"><span>${t("allUsers")}</span><strong>${s.users ?? "—"}</strong></div>
-        </div>`;
+        const feedGraphs=state.feed.map(p=>p.graph).filter(Boolean);
+        const allGraphs=[...state.graphs,...feedGraphs];
+        const uniqueGraphs=new Map(allGraphs.map(g=>[g.id,g]));
+        const nodes=[...uniqueGraphs.values()].reduce((sum,g)=>sum+(g.nodes?.length||0),0), votes=state.feed.reduce((sum,p)=>sum+(p.likes||0)+(p.dislikes||0),0);
+        panel = `<div class="admin-stats"><div class="card admin-stat"><span>${t("totalGraphs")} · ${t("allUsers")}</span><strong>${serverStats.total_graphs ?? uniqueGraphs.size}</strong></div><div class="card admin-stat"><span>${t("totalNodes")} · ${t("allUsers")}</span><strong>${serverStats.total_nodes ?? nodes}</strong></div><div class="card admin-stat"><span>${t("totalVotes")}</span><strong>${serverStats.total_votes ?? votes}</strong></div></div><div class="card setting-card"><div class="section-head" style="margin:0 0 8px"><h3>${t("activityOverview")}</h3><span class="muted">API</span></div><div class="empty" style="padding:32px"><div class="empty-mark">⌁</div><h3>${t("allUsers")}</h3><p>TRACE API</p></div></div>`;
+      } else if (state.admin.section === "graphs" || state.admin.section === "pinned") {
+        const list = state.admin.section === "pinned" ? state.graphs.filter(g=>g.pinned) : state.graphs;
+        panel = list.length ? `<div class="card setting-card admin-table-wrap"><table class="admin-table"><thead><tr><th>${t("title")}</th><th>${t("branches")}</th><th>${t("updated")}</th><th>${t("actions")}</th></tr></thead><tbody>${list.map(g=>`<tr><td><b>${g.pinned?"⌖ ":""}${esc(g.title)}</b></td><td>${g.nodes.length}</td><td>${formatDate(g.updatedAt)}</td><td><div class="row-actions"><button data-action="admin-pin" data-id="${g.id}" title="${g.pinned?t("unpin"):t("pin")}" class="${g.pinned?"pin":""}">${icon("pin",15)}</button><button data-action="admin-open-graph" data-id="${g.id}" title="${t("open")}">${icon("eye",15)}</button><button data-action="admin-delete" data-id="${g.id}" title="${t("delete")}">${icon("trash",15)}</button></div></td></tr>`).join("")}</tbody></table></div>` : `<div class="card empty"><div class="empty-mark">⌖</div><h3>${t("noPinned")}</h3></div>`;
       } else if (state.admin.section === "users") {
-        const users=state.adminData.users||[];
-        panel = users.length ? `<div class="card setting-card admin-table-wrap"><table class="admin-table"><thead><tr><th>${t("usersFake")}</th><th>${t("role")}</th><th>Telegram ID</th><th>${t("actions")}</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${esc(u.username ? "@"+u.username : (u.first_name||"User"))}</b></td><td class="muted">${esc(u.role||"user")}</td><td>${u.telegram_id}</td><td><div class="row-actions"><button data-action="demo-user" title="${t("view")}">${icon("eye",15)}</button></div></td></tr>`).join("")}</tbody></table></div>` : `<div class="card empty"><h3>${t("noGraphs")}</h3></div>`;
+        const users = state.adminData.users || [];
+        panel = `<div class="card setting-card admin-table-wrap"><table class="admin-table"><thead><tr><th>${t("usersFake")}</th><th>${t("role")}</th><th>${t("posts")}</th><th>${t("actions")}</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u[0]}</b></td><td class="muted">${u[1]}</td><td>${u[2]}</td><td><div class="row-actions"><button data-action="demo-user" title="${t("view")}">${icon("eye",15)}</button></div></td></tr>`).join("")}</tbody></table></div>`;
       } else if (state.admin.section === "moderation") {
-        const reports=(state.adminData.reports||[]).filter(r=>r.status==="open");
+        const reports = (state.adminData.reports?.length ? state.adminData.reports : state.reports).filter(r=>r.status==="pending");
         panel = reports.length ? `<div class="card setting-card admin-table-wrap"><table class="admin-table"><thead><tr><th>${t("title")}</th><th>${t("reportReason")}</th><th>${t("updated")}</th><th>${t("actions")}</th></tr></thead><tbody>${reports.map(r=>`<tr><td><b>${esc(r.title)}</b><div class="muted" style="margin-top:4px">${esc(r.details||"")}</div></td><td>${esc(r.reason)}</td><td>${formatDate(r.createdAt)}</td><td><div class="row-actions"><button data-action="admin-report-actions" data-id="${r.id}" title="${t("actions")}">${icon("more",16)}</button></div></td></tr>`).join("")}</tbody></table></div>` : `<div class="card setting-card"><div class="empty" style="padding:32px"><div class="empty-mark">✓</div><h3>${t("noReports")}</h3><p>${t("demoQueueClear")}</p></div></div>`;
       } else {
-        panel = `<div class="card setting-card"><div class="setting-row"><div class="setting-label"><b>${t("admin")}</b><span>${t("statistics")}, ${t("moderation")}</span></div><span class="quick-icon">✓</span></div></div>`;
+        panel = `<div class="card setting-card"><div class="setting-row"><div class="setting-label"><b>Администрирование</b><span>TRACE API</span></div><span class="quick-icon">✓</span></div><div class="setting-row"><div class="setting-label"><b>${t("storage")}</b><span>API</span></div><span class="muted">${state.graphs.length} ${t("graphs").toLowerCase()}</span></div></div>`;
       }
-      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("controlRoom")}</div><h1>${t("admin")}</h1><p class="subtitle">${t("statistics")}</p></div><button class="ghost-btn" data-nav="home">← ${t("home")}</button></div><div class="admin-layout"><nav class="card admin-nav">${sections.map(([id,label])=>`<button class="${state.admin.section===id?"active":""}" data-admin-section="${id}">${label}</button>`).join("")}</nav><div class="admin-main">${panel}</div></div></section>`;
+      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("controlRoom")}</div><h1>${t("admin")}</h1><p class="subtitle">TRACE API</p></div><button class="ghost-btn" data-nav="home">← ${t("home")}</button></div><div class="admin-layout"><nav class="card admin-nav">${sections.map(([id,label])=>`<button class="${state.admin.section===id?"active":""}" data-admin-section="${id}">${label}</button>`).join("")}</nav><div class="admin-main">${panel}</div></div></section>`;
     }
 
     function resetEditorInteractions() {
       state.pointer = { mode:null, id:null, startX:0, startY:0, originX:state.viewport.x, originY:state.viewport.y, nodeX:0, nodeY:0, nodeId:null, nodeEl:null, startedAt:0, moved:false, dragNode:false, suppressClick:false };
       state.pinch = null;
     }
-    async function enterEditor(id, readonly=false) {
+    function enterEditor(id, readonly=false) {
       resetEditorInteractions();
-      try {
-        if (readonly) {
-          const g = await refreshGraphFromApi(id);
-          state.viewingGraphId = g.id;
-        } else {
-          if (!getGraph(id)) await refreshGraphFromApi(id);
-          state.editingGraphId = id;
-        }
-        state.view=readonly?"viewer":"editor";
-        state.viewport={x:0,y:0,scale:1};
-        state.selectedNodeId=null; state.connectMode=false; state.connectSource=null; state.sideOpen=false;
-        state.editorSession++;
-        render();
-      } catch(e) { toast(e.message || "Не удалось открыть граф"); }
+      if(readonly) state.viewingGraphId=id; else state.editingGraphId=id;
+      state.view=readonly?'viewer':'editor';
+      state.viewport={x:0,y:0,scale:1};
+      state.selectedNodeId=null;
+      state.connectMode=false; state.connectSource=null; state.sideOpen=false;
+      state.editorSession++;
+      render();
     }
     function renderEditor(readonly) {
       const graph = readonly ? state.viewingGraphId ? (getGraph(state.viewingGraphId) || state.feed.find(p=>p.id===state.viewingGraphId)?.graph) : null : getGraph(state.editingGraphId);
@@ -1083,6 +839,7 @@
         panel:`<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 4v16"/><path d="M13 8h4M13 12h4M13 16h3"/>`,
         close:`<path d="m6 6 12 12M18 6 6 18"/>`,
         home:`<path d="m4 11 8-7 8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>`,
+        theme:`<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>`,
         zoomIn:`<circle cx="11" cy="11" r="6"/><path d="M11 8v6M8 11h6M16 16l5 5"/>`,
         zoomOut:`<circle cx="11" cy="11" r="6"/><path d="M8 11h6M16 16l5 5"/>`,
         edit:`<path d="m4 16-.7 4.7L8 20l10.8-10.8a2.1 2.1 0 0 0-3-3L4 16z"/><path d="m14 7 3 3"/>`,
@@ -1136,17 +893,17 @@
       $$("[data-nav]").forEach(btn => btn.addEventListener("click", () => setView(btn.dataset.nav)));
       $$("[data-action]").forEach(btn => btn.addEventListener("click", handleAction));
       $$("[data-page]").forEach(btn => btn.addEventListener("click", () => { if(!btn.disabled) { state.page = Number(btn.dataset.page); render(); } }));
-      $$("[data-feed-tab]").forEach(btn => btn.addEventListener("click", async () => { state.feedTab = btn.dataset.feedTab; try { await loadFeed(); refreshFeedUI({animate:true}); } catch(e){toast(e.message||"Ошибка ленты");} }));
-      $$("[data-feed-layout]").forEach(btn => btn.addEventListener("click", () => { state.feedLayout = btn.dataset.feedLayout; localStorage.setItem("trace_osint_feed_layout", state.feedLayout); refreshFeedUI({animate:true}); }));
-      $$("[data-admin-section]").forEach(btn => btn.addEventListener("click", async () => { state.admin.section = btn.dataset.adminSection; saveAdmin(); if(state.admin.section==="stats") state.adminData.stats=await api.admin.stats(); if(state.admin.section==="users") {const d=await api.admin.users(1,100); state.adminData.users=d.items||[];} if(state.admin.section==="moderation") {const d=await api.admin.reports(1,100,"open"); state.adminData.reports=(d.items||[]).map(r=>({...r,id:r.id,graphId:r.graph?.id,title:r.graph?.title||"Без названия",createdAt:r.created_at,status:r.status}));} render(); }));
-      $$("[data-setting]").forEach(select => select.addEventListener("change", async () => { state.settings[select.dataset.setting] = select.value; try { state.settings=await api.settings.patch({[select.dataset.setting]:select.value}); } catch(e){toast(e.message||"Ошибка сохранения");} render(); toast(t("saved")); }));
+      $$("[data-feed-tab]").forEach(btn => btn.addEventListener("click", () => { state.feedTab = btn.dataset.feedTab; refreshFeedUI({animate:true}); }));
+      $$("[data-feed-layout]").forEach(btn => btn.addEventListener("click", () => { state.feedLayout = btn.dataset.feedLayout; refreshFeedUI({animate:true}); }));
+      $$("[data-admin-section]").forEach(btn => btn.addEventListener("click", () => { state.admin.section = btn.dataset.adminSection; saveAdmin(); render(); }));
+      $$("[data-setting]").forEach(select => select.addEventListener("change", () => { state.settings[select.dataset.setting] = select.value; saveSettings(); render(); toast(t("saved")); }));
     }
-    async function handleAction(event) {
+    function handleAction(event) {
       const btn = event.currentTarget, action = btn.dataset.action, id = btn.dataset.id;
       if (action === "create-graph") openCreateGraph();
       else if (action === "open-viewer") enterEditor(id,true);
       else if (action === "delete-graph" || action === "admin-delete") confirmDeleteGraph(id);
-      else if (action === "admin-open") { if(state.user?.role!=="admin") return; state.view = "admin"; state.admin.section = "stats"; state.adminData.stats=await api.admin.stats(); saveAdmin(); render(); }
+      else if (action === "admin-open") { if (!isAdmin()) return toast("Недостаточно прав"); state.view = "admin"; state.admin.section = "stats"; saveAdmin(); render(); }
       else if (action === "theme-toggle") { state.settings.theme = state.settings.theme === "dark" ? "light" : state.settings.theme === "light" ? "system" : "dark"; saveSettings(); render(); toast(t("saved")); }
       else if (action === "close-editor" || action === "close-viewer") { resetEditorInteractions(); state.view = "graphs"; state.selectedNodeId=null; state.connectMode=false; state.connectSource=null; state.sideOpen=false; state.editorSession++; render(); }
       else if (action === "delete-all") confirmDeleteAll();
@@ -1168,28 +925,102 @@
       else if (action === "demo-user") { const row = btn.closest("tr"); const cells = row ? row.querySelectorAll("td") : []; state.modal={type:"demo-user",user:{name:cells[0]?.innerText||"Demo user",role:cells[1]?.innerText||"Analyst",posts:cells[2]?.innerText||"0"}}; renderModal(); }
     }
     function openAdminReportActions(reportId) { state.modal={type:"report-actions",reportId}; renderModal(); }
-    async function resolveReport(reportId, status="resolved") {
-      try {
-        await (status === "resolved" ? api.admin.resolve(reportId) : api.admin.reject(reportId));
-        state.reports = state.reports.filter(r => r.id !== Number(reportId));
-        state.adminData.reports = state.reports;
-        closeModal();
-        render();
-        toast(t("saved"));
-      } catch (e) { toast(e.message || "Не удалось обработать жалобу"); }
-    }
+    async function resolveReport(reportId, status="resolved") { const r=state.reports.find(x=>x.id===reportId); if(!r)return; try { await api.adminResolveReport(reportId,status); r.status=status; closeModal(); if(state.view==="admin" && state.admin.section==="moderation") render(); else if(state.view==="feed") refreshFeedUI({animate:true}); toast(t("saved")); } catch(e) { toast("Ошибка модерации"); } }
     async function deleteReportedGraph(reportId) {
-      const r = state.reports.find(x => Number(x.id) === Number(reportId));
-      const graphId = r?.graphId;
-      if (!graphId) return;
+      const r=state.reports.find(x=>x.id===reportId); if(!r)return;
+      const post=state.feed.find(p=>p.id===r.postId);
+      const graphId=r.graphId || post?.graphId;
+      if(graphId) state.graphs=state.graphs.filter(g=>g.id!==graphId);
+      state.feed=state.feed.filter(p=>p.id!==r.postId && (!graphId || p.graphId!==graphId));
+      r.status="resolved";
+      saveGraphs(); save(STORAGE.feed,state.feed); save(STORAGE.reports,state.reports);
+      closeModal(); render(); toast(t("deleted"));
+    }
+
+    function publishCurrentGraph() {
+      const graph = getGraph(state.editingGraphId);
+      if (!graph) return;
+      const existing = state.feed.find(p => p.graphId === graph.id && p.local);
+      const snapshot = clone(graph);
+      graph.published = true;
+      graph.publishedAt = existing?.createdAt || now();
+      graph.updatedAt = now();
+      if (existing) {
+        existing.title = graph.title;
+        existing.graph = snapshot;
+        existing.createdAt = existing.createdAt || now();
+      } else {
+        state.feed.unshift({
+          id: uid("post"), graphId: graph.id, title: graph.title, author: "Вы", initials: "В",
+          createdAt: now(), likes: 0, dislikes: 0, graph: snapshot, local: true, pinned: !!graph.pinned
+        });
+      }
+      saveGraphs();
+      save(STORAGE.feed, state.feed);
+      const btn = $("[data-action=\"publish-graph\"]");
+      if (btn) {
+        btn.classList.add("active");
+        setTimeout(() => btn.classList.remove("active"), 260);
+      }
+      toast(existing ? t("publicationUpdated") : t("published"));
+    }
+
+    function toggleFeedPin(id) {
+      let graph = getGraph(id);
+      let post = null;
+      if (!graph) { post = state.feed.find(p => p.id === id); graph = post?.graph; }
+      if (!graph) return;
+      const next = !(post?.pinned ?? graph.pinned ?? false);
+      graph.pinned = next;
+      graph.updatedAt = now();
+      if (post) {
+        post.pinned = next;
+        post.graph = clone(graph);
+        const localGraph = getGraph(post.graphId);
+        if (localGraph) { localGraph.pinned = next; localGraph.updatedAt = graph.updatedAt; saveGraphs(); }
+      } else {
+        const existing = state.feed.find(p => p.graphId === graph.id && p.local);
+        if (next && !existing) state.feed.unshift({id:uid("post"),graphId:graph.id,title:graph.title,author:"Вы",initials:"В",createdAt:now(),likes:0,dislikes:0,graph:clone(graph),local:true,pinned:true});
+        if (!next && existing) state.feed=state.feed.filter(p=>p.id!==existing.id);
+        if (getGraph(graph.id)) saveGraphs();
+      }
+      save(STORAGE.feed,state.feed);
+      if (state.view === "feed") refreshFeedUI({animate:true});
+      else render();
+      toast(next?t("pinFeed"):t("unpinFeed"));
+    }
+
+    function toggleSavedPost(postId) {
+      if (!state.feed.some(p => p.id === postId)) return;
+      if (state.savedPosts[postId]) delete state.savedPosts[postId]; else state.savedPosts[postId] = true;
+      save(STORAGE.savedPosts, state.savedPosts);
+      if (state.view === "feed") refreshFeedUI({animate:true});
+      toast(state.savedPosts[postId] ? t("saved") : t("unsavePost"));
+    }
+
+    async function sharePost(postId) {
+      const post = state.feed.find(p => p.id === postId); if (!post) return;
+      const text = `${post.title} — TRACE`;
       try {
-        await api.admin.deleteGraph(graphId);
-        state.reports = state.reports.filter(x => Number(x.id) !== Number(reportId));
-        state.adminData.reports = state.reports;
-        state.feed = state.feed.filter(p => p.graphId !== graphId);
-        state.graphs = state.graphs.filter(g => g.id !== graphId);
-        closeModal(); render(); toast(t("deleted"));
-      } catch (e) { toast(e.message || "Не удалось удалить граф"); }
+        if (navigator.share) await navigator.share({title: post.title, text});
+        else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+        else { const area=document.createElement("textarea"); area.value=text; document.body.append(area); area.select(); document.execCommand("copy"); area.remove(); }
+        toast(t("copied"));
+      } catch {}
+    }
+
+    function openReport(postId) {
+      const post = state.feed.find(p => p.id === postId); if (!post) return;
+      state.modal = {type:"report", postId}; renderModal();
+    }
+
+    function submitReport(postId) {
+      const post = state.feed.find(p => p.id === postId); if (!post) return;
+      if (state.reports.some(r => r.postId === postId)) { closeModal(); toast(t("reportAlready")); return; }
+      const reason = $("#report-reason")?.value || "other";
+      const details = $("#report-details")?.value.trim() || "";
+      const payload={postId,graphId:post.graphId,title:post.title,reason,details};
+      api.report(payload).then(result=>{ if(result?.report) state.reports.unshift(result.report); closeModal(); toast(t("reportSent")); }).catch(()=>toast("Не удалось отправить жалобу"));
     }
 
     function openPostMenu(postId) {
@@ -1197,17 +1028,14 @@
       state.modal = { type: "post-menu", postId }; renderModal();
     }
 
-    async function vote(postId, direction) {
+    function vote(postId, direction) {
       const post = state.feed.find(item => item.id === postId); if (!post) return;
-      try {
-        const graphId = post.graphId || post.id;
-        const data = await (direction === 1 ? api.graphs.like(graphId) : api.graphs.dislike(graphId));
-        post.likes = Number(data.likes || 0);
-        post.dislikes = Number(data.dislikes || 0);
-        post.userReaction = data.reaction || null;
-        await loadFeed();
-        refreshFeedUI({animate:false});
-      } catch (e) { toast(e.message || "Не удалось поставить оценку"); }
+      const previous = state.likes[postId] || 0;
+      if (previous === direction) { delete state.likes[postId]; direction = 0; }
+      else state.likes[postId] = direction;
+      if (previous === 1) post.likes--; if (previous === -1) post.dislikes--;
+      if (direction === 1) post.likes++; if (direction === -1) post.dislikes++;
+      saveLikes(); save(STORAGE.feed, state.feed); if (state.view === "feed") refreshFeedUI({animate:false}); else render(); toast(t("saved"));
     }
     function bindEditor(readonly) {
       const graph = readonly
@@ -1662,7 +1490,7 @@
       $$("[data-remove-row]").forEach(btn=>btn.addEventListener("click",()=>{const all=$$(".row-editor"); if(all.length>1)btn.parentElement.remove();}));
       $("[data-modal-delete-node]")?.addEventListener("click",()=>{const id=$("[data-modal-delete-node]").dataset.modalDeleteNode; closeModal(); deleteNode(id);});
       $("[data-delete-edge]")?.addEventListener("click",()=>{const graph=getGraph(state.editingGraphId);if(graph){graph.edges=graph.edges.filter(e=>e.id!==$("[data-delete-edge]").dataset.deleteEdge);graph.updatedAt=now();saveGraphs();}closeModal();renderEditor(false);toast(t("deleted"));});
-      $("[data-export='html']")?.addEventListener("click",async()=>{closeModal();await downloadGraphHTML();});
+      $("[data-export='html']")?.addEventListener("click",()=>{downloadGraphHTML();closeModal();toast(t("htmlReady"));});
       $("[data-export='image']")?.addEventListener("click",()=>{downloadGraphImage();closeModal();});
       $("#graph-form")?.addEventListener("submit",event=>{event.preventDefault(); const title=$("#graph-name").value.trim()||"Без названия"; const graphId=state.modal.graphId; if(graphId){const graph=getGraph(graphId);graph.title=title;graph.updatedAt=now();saveGraphs();closeModal();render();toast(t("saved"));}else{const graph=makeGraph(title,0);graph.nodes=[];graph.edges=[];graph.nodes.push({id:uid("node"),type:"ordinary",title:"Первый узел",x:390,y:270,text:"Начните с добавления деталей",rows:[],media:"",collapsed:true});state.graphs.unshift(graph);saveGraphs();closeModal();enterEditor(graph.id,false);}});
       $("#node-form")?.addEventListener("submit",event=>{event.preventDefault(); saveNodeForm();});
@@ -1670,16 +1498,7 @@
       $("#node-type")?.dispatchEvent(new Event("change"));
       const updateBranchPreview=()=>{const p=$("#branch-preview"); if(!p)return; p.innerHTML=`<b>${esc($("#node-title")?.value||"Новый узел")}</b><span>${esc($("#node-text")?.value||"")}</span>`;};
       $("#node-title")?.addEventListener("input",updateBranchPreview); $("#node-text")?.addEventListener("input",updateBranchPreview);
-      $("#node-media-file")?.addEventListener("change",async event=>{
-        const file=event.target.files?.[0]; if(!file)return;
-        if(file.size > 15 * 1024 * 1024){ toast("Файл больше 15 MB"); return; }
-        try {
-          const form = new FormData(); form.append("file", file, file.name);
-          const media = await api.media.upload(form);
-          $("#node-media").value = media.url || "";
-          toast(t("imageReady"));
-        } catch(e) { toast(e.message || "Не удалось загрузить файл"); }
-      });
+      $("#node-media-file")?.addEventListener("change",async event=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{$("#node-media").value=reader.result;toast(t("imageReady"));};reader.readAsDataURL(file);});
     }
     function saveNodeForm() {
       const graph=getGraph(state.editingGraphId), form=$("#node-form"); if(!graph||!form)return;
@@ -1699,21 +1518,12 @@
       graph.updatedAt=now();saveGraphs();closeModal();renderEditor(false);toast(t("saved"));
     }
     function download(name, content, type) { const blob=new Blob([content],{type}), link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000); }
-    async function downloadGraphHTML() {
+    function downloadGraphHTML() {
       const graph=getGraph(state.editingGraphId); if(!graph)return;
-      try {
-        const res = await api.download(`/api/graphs/${encodeURIComponent(graph.id)}/html`);
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const link=document.createElement("a");
-        link.href=url;
-        link.download=(graph.title||"graph").replace(/[^a-z0-9а-яё]+/gi,"-").toLowerCase()+".html";
-        document.body.append(link); link.click(); link.remove();
-        setTimeout(()=>URL.revokeObjectURL(url),1000);
-        toast(t("htmlReady"));
-      } catch(e) { toast(e.message || "Не удалось скачать HTML"); }
+      const payload=JSON.stringify(graph).replace(/</g,"\\u003c");
+      const html=`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(graph.title)}</title><style>html,body{margin:0;height:100%;overflow:hidden;background:#0b1120;color:#edf3ff;font:14px system-ui}header{height:54px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid #26344f;background:#101a30;box-sizing:border-box}h1{font-size:15px}.hint{margin-left:auto;color:#8d9ab5;font-size:11px}#c{position:absolute;inset:54px 0 0;overflow:hidden;background-image:radial-gradient(#344563 1px,transparent 1px);background-size:25px 25px;touch-action:none}#s{position:absolute;inset:0;transform-origin:0 0}.n{position:absolute;transform:translate(-50%,-50%);min-width:140px;max-width:220px;padding:12px;border:1px solid #385175;border-radius:12px;background:#15233d;box-shadow:0 10px 25px #0006;user-select:none;cursor:grab}.k{color:#8d9ab5;font-size:9px;text-transform:uppercase;margin-bottom:7px}.t{font-weight:700}.x{color:#8d9ab5;font-size:11px;line-height:1.4;margin-top:8px}svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}</style></head><body><header><h1>${esc(graph.title)}</h1><span class="hint">Перетаскивание · колесо · нажмите узел</span></header><div id="c"><div id="s"><svg id="e"></svg></div></div><script>const G=${payload},c=document.getElementById("c"),s=document.getElementById("s"),e=document.getElementById("e"),by=Object.fromEntries(G.nodes.map(n=>[n.id,n]));let v={x:0,y:0,z:1},p=null;function draw(){s.style.transform="translate("+v.x+"px,"+v.y+"px) scale("+v.z+")";e.innerHTML=G.edges.map(q=>{let a=by[q.from],b=by[q.to],d=b.x-a.x,be=Math.max(55,Math.abs(d)*.28);return "<path d='M "+a.x+" "+a.y+" C "+(a.x+be)+" "+a.y+", "+(b.x-be)+" "+b.y+", "+b.x+" "+b.y+"' fill='none' stroke='#6ee7d1' stroke-opacity='.6' stroke-width='2'/>"}).join("");s.querySelectorAll(".n").forEach(x=>x.remove());G.nodes.forEach(n=>{let x=document.createElement("div");x.className="n";x.style.left=n.x+"px";x.style.top=n.y+"px";x.innerHTML="<div class='k'>"+n.type+"</div><div class='t'>"+String(n.title).replace(/[<>&]/g,"")+"</div><div class='x'>"+String(n.text||"").replace(/[<>&]/g,"")+"</div>";x.onpointerdown=a=>{a.stopPropagation();let sx=a.clientX,sy=a.clientY,ox=n.x,oy=n.y;x.setPointerCapture(a.pointerId);x.onpointermove=b=>{n.x=ox+(b.clientX-sx)/v.z;n.y=oy+(b.clientY-sy)/v.z;draw()}};x.ondblclick=()=>alert((n.title||"")+"\\n\\n"+(n.text||"")+(n.rows||[]).map(r=>"\\n"+r[0]+": "+r[1]).join(""));s.append(x)})}c.onpointerdown=a=>{p={x:a.clientX,y:a.clientY,ox:v.x,oy:v.y};c.setPointerCapture(a.pointerId)};c.onpointermove=a=>{if(p){v.x=p.ox+a.clientX-p.x;v.y=p.oy+a.clientY-p.y;draw()}};c.onpointerup=()=>p=null;c.onwheel=a=>{a.preventDefault();let r=c.getBoundingClientRect(),f=a.deltaY<0?1.1:.9,n=v.z,nz=Math.max(.3,Math.min(2.6,n*f)),x=a.clientX-r.left,y=a.clientY-r.top;v.x=x-(x-v.x)*(nz/n);v.y=y-(y-v.y)*(nz/n);v.z=nz;draw()};draw();<\/script></body></html>`;
+      download((graph.title||"graph").replace(/[^a-z0-9а-яё]+/gi,"-").toLowerCase()+".html",html,"text/html");
     }
-
     function downloadGraphImage() {
       const graph=getGraph(state.editingGraphId); if(!graph)return;
       const scale=3, width=1200, height=760, svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width*scale}" height="${height*scale}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#0b1120"/><g opacity=".22">${Array.from({length:38},(_,i)=>`<path d="M ${i*32} 0V${height}M 0 ${i*32}H${width}" stroke="#53617e" stroke-width=".5"/>`).join("")}</g><g transform="translate(80 70)">${graph.edges.map(edge=>{const a=graph.nodes.find(n=>n.id===edge.from),b=graph.nodes.find(n=>n.id===edge.to);if(!a||!b)return"";const dx=b.x-a.x,be=Math.max(55,Math.abs(dx)*.28);return `<path d="M${a.x} ${a.y} C${a.x+be} ${a.y},${b.x-be} ${b.y},${b.x} ${b.y}" fill="none" stroke="#6ee7d1" stroke-opacity=".7" stroke-width="3"/>`}).join("")}${graph.nodes.map(n=>`<g transform="translate(${n.x} ${n.y})"><rect x="-95" y="-28" width="190" height="56" rx="12" fill="#162540" stroke="#405a82"/><circle cx="-78" cy="-8" r="5" fill="#6ee7d1"/><text x="-65" y="-4" fill="#8d9ab5" font-family="system-ui" font-size="10">${esc(nodeTypeLabel(n.type))}</text><text x="-78" y="14" fill="#edf3ff" font-family="system-ui" font-size="13" font-weight="700">${esc(n.title).slice(0,25)}</text></g>`).join("")}</g><text x="80" y="${height-30}" fill="#8d9ab5" font-family="system-ui" font-size="12">TRACE / ${esc(graph.title)}</text></svg>`;
@@ -1721,13 +1531,8 @@
     }
     document.addEventListener("keydown", event => { if(event.key==="Escape" && state.modal) closeModal(); });
     window.matchMedia("(prefers-color-scheme: light)").addEventListener?.("change",()=>{if(state.settings.theme==="system")applyTheme();});
-    // Start only after the DOM and Telegram WebApp bridge are available.
-    // This is a static-site frontend: there is no demo/local bootstrap.
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", bootstrap, { once: true });
-    } else {
-      bootstrap();
-    }
+    render();
+    bootstrapApi();
   })();
   </script>
 </body>
