@@ -418,7 +418,8 @@
       .editor-tools .tool-btn:nth-child(5){animation-delay:.1s}
       @keyframes toolbar-in { from{opacity:0;transform:translateY(-5px) scale(.96)} to{opacity:1;transform:none} }
     }
-.danger-icon-btn{display:inline-flex;align-items:center;justify-content:center}.danger-icon-btn svg{display:block}</style>
+.danger-icon-btn{display:inline-flex;align-items:center;justify-content:center}.danger-icon-btn svg{display:block}    .link-gate{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;z-index:2}.link-gate-card{width:min(460px,100%);padding:30px;border:1px solid var(--line-strong);border-radius:24px;background:var(--panel);box-shadow:var(--shadow);backdrop-filter:blur(18px);text-align:center}.link-gate-card h1{margin:8px 0 10px;font-size:28px}.link-code-row{display:flex;gap:8px;align-items:center;margin:24px 0 12px}.link-code-box{flex:1;padding:17px 14px;border:1px solid var(--line-strong);border-radius:14px;background:var(--panel-solid);font:700 23px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:2px;user-select:all}.link-gate-check,.link-gate-new{width:100%;justify-content:center}.link-gate-new{margin-top:9px}.link-gate-new:disabled{opacity:.45;cursor:not-allowed}.link-cooldown{margin-top:12px;color:var(--muted);font-size:12px}
+</style>
 </head>
 <body>
   <div class="app-bg"></div>
@@ -463,7 +464,7 @@
         connectHint: "Режим связи: нажмите на первый, затем на второй узел", connectionCreated: "Связь создана", selectNode: "Узел выбран",
         exportTitle: "Экспорт графа", htmlExport: "Самостоятельный HTML", imageExport: "Изображение PNG", downloaded: "Файл подготовлен для скачивания",
         feedTitle: "Лента графов", popular: "Популярные", recommended: "Рекомендованные", newest: "Новые", users: "пользователей",
-        settingsTitle: "Настройки", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
+        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Введите код, который бот использует для привязки аккаунта.", linkCode: "Код", linkDemoNote: "Сейчас API отключён: привязка работает только как локальный интерфейс. После подключения API проверка кода будет серверной.", linkConfirm: "Привязать", linkCodeTitle: "Код для привязки", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
         deleteAll: "Удалить все графы", deleteAllText: "Все локальные графы и их данные будут удалены без возможности восстановления.",
         confirm: "Подтвердите действие", sureDelete: "Вы уверены?", yesDelete: "Да, удалить", allDeleted: "Все графы удалены",
         admin: "Админ-панель", statistics: "Статистика", adminGraphs: "Графы", moderation: "Модерация", pinned: "Закреплённые", adminSettings: "Настройки",
@@ -486,7 +487,7 @@
         connectHint: "Connection mode: click the first, then the second node", connectionCreated: "Connection created", selectNode: "Node selected",
         exportTitle: "Export graph", htmlExport: "Standalone HTML", imageExport: "PNG image", downloaded: "File ready to download",
         feedTitle: "Graph feed", popular: "Popular", recommended: "Recommended", newest: "Newest", users: "users",
-        settingsTitle: "Settings", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
+        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Enter the code used by the bot to link your account.", linkCode: "Code", linkDemoNote: "API is disabled for now: linking is only a local UI demo. After the API is connected, code verification will happen on the server.", linkConfirm: "Link", linkCodeTitle: "Link code", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
         deleteAll: "Delete all graphs", deleteAllText: "All local graphs and their data will be permanently removed.",
         confirm: "Confirm action", sureDelete: "Are you sure?", yesDelete: "Yes, delete", allDeleted: "All graphs deleted",
         admin: "Admin panel", statistics: "Statistics", adminGraphs: "Graphs", moderation: "Moderation", pinned: "Pinned", adminSettings: "Settings",
@@ -547,39 +548,66 @@
        Telegram Mini App/Web App authentication is sent as
        X-Telegram-Init-Data. The API must verify it server-side.
     */
-    const API_BASE = (window.TRACE_API_BASE || document.querySelector('meta[name="trace-api-base"]')?.content || "/api").replace(/\/$/, "");
+    // =========================
+    // TELEGRAM / LOCAL DEMO MODE
+    // =========================
+    // API is intentionally disabled for now. The Web App keeps data locally,
+    // while the account-linking UI mirrors the Telegram bot's "Связать" flow.
     const tg = window.Telegram?.WebApp;
     try { tg?.ready?.(); tg?.expand?.(); } catch (_) {}
+    const BOT_USERNAME = "OsintGraphsBot";
+    const LOCAL_LINK_KEY = "trace_osint_linked";
+
+    // Temporary account-linking stub. Everything here lives only in JS memory; the API will replace it later.
+    const LINK_CODE_COOLDOWN = 5 * 60 * 1000;
+    let linkGeneratedCode = "";
+    let linkGeneratedAt = 0;
+    let linkVerified = false;
+    function randomLinkPart() {
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const values = [letters[Math.floor(Math.random()*26)], letters[Math.floor(Math.random()*26)], String(Math.floor(Math.random()*10))];
+      for (let i=values.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [values[i],values[j]]=[values[j],values[i]]; }
+      return values.join("");
+    }
+    async function generateLinkCode() {
+      try { const data = await api.linkCode(); linkGeneratedCode = data.code; linkGeneratedAt = Date.now(); }
+      catch (e) { apiError=e; linkGeneratedCode = "API ERROR"; linkGeneratedAt = Date.now(); }
+    }
+    function linkCooldownLeft() { return Math.max(0, LINK_CODE_COOLDOWN - (Date.now()-linkGeneratedAt)); }
+    function formatCooldown(ms) { const total=Math.ceil(ms/1000), m=Math.floor(total/60), s=total%60; return `${m}:${String(s).padStart(2,"0")}`; }
+
+    const API_BASE = (window.TRACE_API_URL || "").replace(/\/$/, "");
+    const tgInitData = tg?.initData || "";
     const api = {
       async request(path, options = {}) {
-        const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-        const initData = tg?.initData || "";
-        if (initData) headers["X-Telegram-Init-Data"] = initData;
-        const res = await fetch(API_BASE + path, { credentials: "include", ...options, headers });
-        const text = await res.text();
-        let data = null; try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
-        if (!res.ok) throw new Error(data?.message || data?.error || `API ${res.status}`);
-        return data;
+        const headers = { ...(options.headers || {}) };
+        if (tgInitData) headers["X-Telegram-Init-Data"] = tgInitData;
+        if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+        const res = await fetch(API_BASE + path, { ...options, headers });
+        if (!res.ok) { let detail = `HTTP ${res.status}`; try { const j = await res.json(); detail = j.detail || detail; } catch {} throw new Error(detail); }
+        return res.status === 204 ? null : res.json();
       },
-      me: () => api.request("/auth/me"),
-      graphs: () => api.request("/graphs"),
-      syncGraphs: graphs => api.request("/graphs/sync", { method:"PUT", body:JSON.stringify({graphs}) }),
-      feed: () => api.request("/feed"),
-      syncFeed: (feed, likes) => api.request("/feed/sync", { method:"PUT", body:JSON.stringify({feed, likes}) }),
-      favorites: () => api.request("/favorites"),
-      syncFavorites: savedPosts => api.request("/favorites/sync", { method:"PUT", body:JSON.stringify({savedPosts}) }),
-      report: payload => api.request("/reports", { method:"POST", body:JSON.stringify(payload) }),
-      settings: () => api.request("/settings"),
-      saveSettings: settings => api.request("/settings", { method:"PATCH", body:JSON.stringify(settings) }),
-      adminStats: () => api.request("/admin/stats"),
-      adminUsers: () => api.request("/admin/users"),
-      adminReports: () => api.request("/admin/reports"),
-      adminResolveReport: (id,status) => api.request(`/admin/reports/${encodeURIComponent(id)}/resolve`, {method:"POST",body:JSON.stringify({status})}),
-      adminDeleteGraph: id => api.request(`/admin/graphs/${encodeURIComponent(id)}`, {method:"DELETE"}),
-      adminPinGraph: (id,pinned) => api.request(`/admin/graphs/${encodeURIComponent(id)}/pin`, {method:"PATCH",body:JSON.stringify({pinned})})
+      me() { return this.request("/api/auth/me"); },
+      graphs() { return this.request("/api/graphs"); },
+      feed() { return this.request("/api/feed"); },
+      favorites() { return this.request("/api/favorites"); },
+      settings() { return this.request("/api/settings"); },
+      saveSettings(settings) { return this.request("/api/settings", {method:"PATCH", body:JSON.stringify(settings)}); },
+      report(payload) { return this.request("/api/reports", {method:"POST", body:JSON.stringify(payload)}); },
+      adminStats() { return this.request("/api/admin/stats"); },
+      adminUsers() { return this.request("/api/admin/users"); },
+      adminReports() { return this.request("/api/admin/reports"); },
+      adminResolveReport(id,status) { return this.request(`/api/admin/reports/${encodeURIComponent(id)}/resolve`, {method:"POST", body:JSON.stringify({status})}); },
+      adminDeleteGraph(id) { return this.request(`/api/admin/graphs/${encodeURIComponent(id)}`, {method:"DELETE"}); },
+      adminPinGraph(id,pinned) { return this.request(`/api/admin/graphs/${encodeURIComponent(id)}/pin`, {method:"PATCH", body:JSON.stringify({pinned})}); },
+      syncGraphs(graphs) { return this.request("/api/graphs/sync", {method:"PUT", body:JSON.stringify({graphs})}); },
+      syncFeed(feed,likes) { return this.request("/api/feed/sync", {method:"PUT", body:JSON.stringify({feed,likes})}); },
+      syncFavorites(savedPosts) { return this.request("/api/favorites/sync", {method:"PUT", body:JSON.stringify({savedPosts})}); },
+      linkCode() { return this.request("/api/link/code", {method:"POST"}); },
+      linkCheck(code) { return this.request(`/api/link/check?code=${encodeURIComponent(code)}`, {method:"POST"}); }
     };
-    let apiReady = false;
-    let apiLoading = true;
+    let apiReady = true;
+    let apiLoading = false;
     let apiError = null;
 
     const defaultSettings = { language: "ru", theme: "dark" };
@@ -607,47 +635,58 @@
       viewport: { x: 0, y: 0, scale: 1 },
       pointer: { mode: null, id: null, startX: 0, startY: 0, originX: 0, originY: 0, nodeX: 0, nodeY: 0 },
       pinch: null,
-      editorSession: 0
+      editorSession: 0,
+      linked: localStorage.getItem(LOCAL_LINK_KEY) === "1"
     };
+
     function save(key, value) {
-      if (key === STORAGE.graphs) return api.syncGraphs(value).catch(e => { apiError=e; toast("Ошибка сохранения графов"); });
-      if (key === STORAGE.feed) return api.syncFeed(value, state.likes).catch(e => { apiError=e; toast("Ошибка синхронизации ленты"); });
-      if (key === STORAGE.likes) return api.syncFeed(state.feed, value).catch(e => { apiError=e; toast("Ошибка синхронизации реакции"); });
-      if (key === STORAGE.savedPosts) return api.syncFavorites(value).catch(e => { apiError=e; toast("Ошибка сохранения избранного"); });
-      if (key === STORAGE.settings) return api.saveSettings(value).catch(e => { apiError=e; toast("Ошибка сохранения настроек"); });
+      try {
+        if (key === STORAGE.graphs) localStorage.setItem(STORAGE.graphs, JSON.stringify(value));
+        else if (key === STORAGE.feed) localStorage.setItem(STORAGE.feed, JSON.stringify(value));
+        else if (key === STORAGE.likes) localStorage.setItem(STORAGE.likes, JSON.stringify(value));
+        else if (key === STORAGE.savedPosts) localStorage.setItem(STORAGE.savedPosts, JSON.stringify(value));
+        else if (key === STORAGE.settings) localStorage.setItem(STORAGE.settings, JSON.stringify(value));
+      } catch (_) {}
       return Promise.resolve();
     }
-    function saveGraphs() { return save(STORAGE.graphs, state.graphs); }
-    function saveSettings() { return save(STORAGE.settings, state.settings); }
+    function saveGraphs() { save(STORAGE.graphs, state.graphs); return apiReady ? api.syncGraphs(state.graphs).then(v => { if(Array.isArray(v)) state.graphs=v; return v; }).catch(e => { apiError=e; }) : Promise.resolve(); }
+    function saveSettings() { save(STORAGE.settings, state.settings); return apiReady ? api.saveSettings(state.settings).catch(e => { apiError=e; }) : Promise.resolve(); }
     function saveLikes() { return save(STORAGE.likes, state.likes); }
     function saveAdmin() { return Promise.resolve(); }
+
+    function loadLocalDemoState() {
+      const read = (key, fallback) => {
+        try { const v = JSON.parse(localStorage.getItem(key) || "null"); return v ?? fallback; } catch (_) { return fallback; }
+      };
+      state.graphs = read(STORAGE.graphs, []);
+      state.feed = read(STORAGE.feed, makeFeed());
+      state.likes = read(STORAGE.likes, {});
+      state.savedPosts = read(STORAGE.savedPosts, {});
+      state.settings = { ...defaultSettings, ...read(STORAGE.settings, {}) };
+      state.me = {
+        id: tg?.initDataUnsafe?.user?.id || null,
+        username: tg?.initDataUnsafe?.user?.username || "",
+        first_name: tg?.initDataUnsafe?.user?.first_name || "Пользователь",
+        role: "user"
+      };
+    }
+
     async function bootstrapApi() {
-      apiLoading = true; apiError = null; render();
+      apiLoading = true; apiError = null;
       try {
-        const [me, graphs, feed, favorites, settings] = await Promise.all([
-          api.me(), api.graphs(), api.feed(), api.favorites(), api.settings().catch(()=>null)
-        ]);
-        state.me = me?.user || me || null;
-        if (state.me && (state.me.role === "admin" || state.me.is_admin === true)) {
-          const [stats, users, reports] = await Promise.all([api.adminStats().catch(()=>null), api.adminUsers().catch(()=>[]), api.adminReports().catch(()=>[])]);
-          state.adminData = { stats, users: users?.users || users || [], reports: reports?.reports || reports || [] };
-          state.reports = state.adminData.reports;
-        }
-        state.graphs = Array.isArray(graphs) ? graphs : (graphs?.graphs || []);
-        state.feed = Array.isArray(feed) ? feed : (feed?.feed || []);
-        state.savedPosts = favorites?.savedPosts || favorites || {};
-        if (settings) state.settings = { ...defaultSettings, ...(settings.settings || settings) };
-        state.likes = feed?.likes || {};
-        state.reports = [];
-        apiReady = true;
+        const [me, graphs, feed, favorites, settings] = await Promise.all([api.me(), api.graphs(), api.feed(), api.favorites(), api.settings()]);
+        state.me = me?.user || null; state.graphs = Array.isArray(graphs) ? graphs : [];
+        state.feed = feed?.feed || []; state.likes = feed?.likes || {};
+        state.savedPosts = favorites?.savedPosts || {}; state.settings = {...defaultSettings, ...(settings?.settings || {})};
+        state.linked = true; linkVerified = true;
       } catch (e) {
         apiError = e;
-        state.me = null; state.graphs=[]; state.feed=[]; state.savedPosts={}; state.likes={};
-      } finally {
-        apiLoading = false; render();
-      }
+        loadLocalDemoState();
+        if (tgInitData) { try { await api.me(); } catch {} }
+      } finally { apiLoading = false; render(); }
     }
-    function isAdmin() { return state.me?.role === "admin" || state.me?.is_admin === true; }
+    function isAdmin() { return !!state.me?.is_admin || state.me?.role === "admin"; }
+
 
     function currentGraph() { return state.graphs.find(graph => graph.id === state.editingGraphId || graph.id === state.viewingGraphId); }
     function getGraph(id) { return state.graphs.find(graph => graph.id === id); }
@@ -666,6 +705,8 @@
       document.documentElement.dataset.theme = theme;
     }
     function toast(message) {
+      // Единственный разрешённый флажок/уведомление в интерфейсе — «Аккаунт связан».
+      if (message !== t("linkedAccount") && message !== t("linkValid")) return;
       const item = document.createElement("div"); item.className = "toast"; item.textContent = message;
       $("#toast-stack").append(item); setTimeout(() => item.remove(), 2600);
     }
@@ -678,11 +719,11 @@
     function closeModal() { state.modal = null; resetEditorInteractions(); renderModal(); }
     function confirmDeleteGraph(graphId) {
       const graph = getGraph(graphId); if (!graph) return;
-      state.modal = { type: "confirm", title: t("delete"), text: `"${graph.title}"`, action: () => { state.graphs = state.graphs.filter(item => item.id !== graphId); saveGraphs(); state.modal = null; if (state.editingGraphId === graphId) state.view = "graphs"; render(); toast(t("deleted")); } };
+      state.modal = { type: "confirm", title: t("delete"), text: `"${graph.title}"`, action: () => { state.graphs = state.graphs.filter(item => item.id !== graphId); saveGraphs(); state.modal = null; if (state.editingGraphId === graphId) state.view = "graphs"; render(); ; } };
       renderModal();
     }
     function confirmDeleteAll() {
-      state.modal = { type: "confirm", title: t("deleteAll"), text: t("deleteAllText"), action: () => { state.graphs = []; saveGraphs(); state.modal = null; state.view = "graphs"; render(); toast(t("allDeleted")); } };
+      state.modal = { type: "confirm", title: t("deleteAll"), text: t("deleteAllText"), action: () => { state.graphs = []; saveGraphs(); state.modal = null; state.view = "graphs"; render(); ; } };
       renderModal();
     }
     function renderShell(content) {
@@ -697,21 +738,45 @@
         </aside>
         <main class="main">
           <div class="topbar"><div class="breadcrumbs"><b>TRACE</b><span> / ${state.view === "admin" ? t("admin") : state.view === "home" ? t("home") : state.view === "graphs" ? t("graphs") : state.view === "feed" ? t("feed") : state.view === "favorites" ? t("favorites") : t("settings")}</span></div>
-            <div class="top-actions">${isAdmin() ? `<button class="ghost-btn" data-action="admin-open">${icon("more",18)} <span>${t("admin")}</span></button>` : ""}<button class="icon-btn" data-action="theme-toggle" title="${t("theme")}">${icon("theme",18)}</button></div>
+            <div class="top-actions"><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ " : ""}${t(state.linked ? "linkedAccount" : "linkAccount")}</button>${isAdmin() ? `<button class="ghost-btn" data-action="admin-open">${icon("more",18)} <span>${t("admin")}</span></button>` : ""}<button class="icon-btn" data-action="theme-toggle" title="${t("theme")}">${icon("theme",18)}</button></div>
           </div>
           <div class="content">${content}</div>
         </main>
         <nav class="mobile-nav">${nav.map(([id, icon, label]) => `<button class="${state.view === id ? "active" : ""}" data-nav="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join("")}</nav>
       </div>`;
     }
+    function renderLinkGate() {
+      if (!linkGeneratedCode) generateLinkCode();
+      const left = linkCooldownLeft();
+      return `<div class="link-gate"><div class="link-gate-card">
+        <div class="eyebrow">TRACE / TELEGRAM</div><h1>${t("linkCodeTitle")}</h1>
+        <p class="subtitle">${t("linkText")}</p>
+        <div class="link-code-row"><div class="link-code-box">${esc(linkGeneratedCode)}</div><button class="icon-btn" data-link-copy title="${t("linkCopy")}">${icon("copy",18)}</button></div>
+        <button class="primary-btn link-gate-check" data-link-gate-check>${t("linkCheck")}</button>
+        <button class="ghost-btn link-gate-new" data-link-gate-new ${left>0?"disabled":""}>${t("linkNew")}</button>
+        ${left>0?`<div class="link-cooldown">${t("linkWait")} <b id="link-cooldown">${formatCooldown(left)}</b></div>`:""}
+      </div></div>`;
+    }
+    function bindLinkGate() {
+      $(`[data-link-copy]`)?.addEventListener("click", async()=>{
+        try { await navigator.clipboard.writeText(linkGeneratedCode); } catch (_) { const a=document.createElement("textarea"); a.value=linkGeneratedCode; document.body.appendChild(a); a.select(); document.execCommand("copy"); a.remove(); }
+        ;
+      });
+      $(`[data-link-gate-check]`)?.addEventListener("click",async()=>{
+        try { await api.linkCheck(linkGeneratedCode); linkVerified=true; state.linked=true; localStorage.setItem(LOCAL_LINK_KEY,"1"); render(); toast(t("linkValid")); }
+        catch (_) { toast(t("invalid_code")); }
+      });
+      $(`[data-link-gate-new]`)?.addEventListener("click",()=>{ if(linkCooldownLeft()>0)return; generateLinkCode(); render(); });
+      if(linkCooldownLeft()>0){ const timer=setInterval(()=>{ const el=$("#link-cooldown"); if(linkVerified||!el){clearInterval(timer);return;} const left=linkCooldownLeft(); if(left<=0){clearInterval(timer);render();return;} el.textContent=formatCooldown(left); },250); }
+    }
     function render() {
       applyTheme();
+      if (!linkVerified) { $("#app").innerHTML=renderLinkGate(); bindLinkGate(); return; }
       if (state.view === "editor") { renderEditor(false); return; }
       if (state.view === "viewer") { renderEditor(true); return; }
       if (state.view === "admin" && !isAdmin()) state.view = "home";
       let content = state.view === "home" ? renderHome() : state.view === "graphs" ? renderGraphs() : state.view === "feed" ? renderFeed() : state.view === "favorites" ? renderFavorites() : state.view === "settings" ? renderSettings() : renderAdmin();
-      const apiBanner = apiLoading ? `<div class="api-banner">Подключение к API…</div>` : apiError ? `<div class="api-banner error">Не удалось подключиться к API. Проверьте адрес API и авторизацию Telegram.</div>` : "";
-      $("#app").innerHTML = apiBanner + renderShell(content); bindShell(); renderModal();
+      $("#app").innerHTML = renderShell(content); bindShell(); renderModal();
     }
     function renderHome() {
       const totalNodes = state.graphs.reduce((sum, graph) => sum + graph.nodes.length, 0);
@@ -719,7 +784,7 @@
       return `<section class="view">
         <div class="page-title"><div><div class="eyebrow">${t("workspace")}</div><h1>${t("welcome")}</h1><p class="subtitle">${t("welcomeText")}</p></div><button class="primary-btn" data-action="create-graph">＋ ${t("create")}</button></div>
         <div class="grid dashboard-grid">
-          <article class="card welcome-card"><div><div class="eyebrow">TRACE / DEMO</div><h2>${t("create")}<br>${t("welcome").toLowerCase()}</h2><p class="subtitle">${state.graphs.length ? `${state.graphs.length} ${t("graphs").toLowerCase()} · ${totalNodes} ${t("branches")}` : t("noGraphsText")}</p></div><div class="welcome-actions"><button class="primary-btn" data-action="create-graph">${t("create")}</button><button class="ghost-btn" data-nav="graphs">${t("openGraphs")} →</button></div></article>
+          <article class="card welcome-card"><div><div class="eyebrow">TRACE / DEMO</div><h2>${t("create")}<br>${t("welcome").toLowerCase()}</h2><p class="subtitle">${state.graphs.length ? `${state.graphs.length} ${t("graphs").toLowerCase()} · ${totalNodes} ${t("branches")}` : t("noGraphsText")}</p></div><div class="welcome-actions"><button class="primary-btn" data-action="create-graph">${t("create")}</button><button class="ghost-btn" data-nav="graphs">${t("openGraphs")} →</button><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ " : ""}${t(state.linked ? "linkedAccount" : "linkAccount")}</button></div></article>
           <article class="card metric-card"><div><div class="eyebrow">${t("graphs")}</div><div class="metric-number">${state.graphs.length}</div></div><div class="metric-meta">TRACE API</div></article>
           <article class="card quick-card"><button data-nav="feed"><div><div class="eyebrow">${t("feed")}</div><h3>${t("feedTitle")}</h3><p class="subtitle">${state.feed.length} ${t("posts")}</p></div><span class="quick-icon">↗</span></button></article>
           <article class="card quick-card"><button data-nav="settings"><div><div class="eyebrow">${t("settings")}</div><h3>${t("settingsTitle")}</h3><p class="subtitle">${state.settings.language === "ru" ? "Русский" : "English"} · ${state.settings.theme === "dark" ? t("dark") : state.settings.theme === "light" ? t("light") : t("system")}</p></div><span class="quick-icon">⌘</span></button></article>
@@ -848,6 +913,7 @@
         chevronUp:`<path d="m7 15 5-5 5 5"/>`,
         trash:`<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="m9 7 .7-2h4.6l.7 2"/><path d="M6 7l1 13h10l1-13"/>`,
         link:`<path d="M9 15 7.5 16.5a3.2 3.2 0 0 1-4.5-4.5L6 9"/><path d="m15 9 1.5-1.5A3.2 3.2 0 0 1 21 12l-3 3"/><path d="m8 12 8 0"/>`,
+        copy:`<rect x="9" y="9" width="10" height="10" rx="2"/><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>`,
         table:`<rect x="4" y="5" width="16" height="14" rx="1"/><path d="M4 10h16M4 14h16M10 5v14M16 5v14"/>`,
         text:`<path d="M5 6h14M12 6v13"/><path d="M8 19h8"/>`,
         image:`<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m5 17 4-4 3 3 2-2 5 4"/>`,
@@ -896,7 +962,7 @@
       $$("[data-feed-tab]").forEach(btn => btn.addEventListener("click", () => { state.feedTab = btn.dataset.feedTab; refreshFeedUI({animate:true}); }));
       $$("[data-feed-layout]").forEach(btn => btn.addEventListener("click", () => { state.feedLayout = btn.dataset.feedLayout; refreshFeedUI({animate:true}); }));
       $$("[data-admin-section]").forEach(btn => btn.addEventListener("click", () => { state.admin.section = btn.dataset.adminSection; saveAdmin(); render(); }));
-      $$("[data-setting]").forEach(select => select.addEventListener("change", () => { state.settings[select.dataset.setting] = select.value; saveSettings(); render(); toast(t("saved")); }));
+      $$("[data-setting]").forEach(select => select.addEventListener("change", () => { state.settings[select.dataset.setting] = select.value; saveSettings(); render();; }));
     }
     function handleAction(event) {
       const btn = event.currentTarget, action = btn.dataset.action, id = btn.dataset.id;
@@ -904,7 +970,7 @@
       else if (action === "open-viewer") enterEditor(id,true);
       else if (action === "delete-graph" || action === "admin-delete") confirmDeleteGraph(id);
       else if (action === "admin-open") { if (!isAdmin()) return toast("Недостаточно прав"); state.view = "admin"; state.admin.section = "stats"; saveAdmin(); render(); }
-      else if (action === "theme-toggle") { state.settings.theme = state.settings.theme === "dark" ? "light" : state.settings.theme === "light" ? "system" : "dark"; saveSettings(); render(); toast(t("saved")); }
+      else if (action === "theme-toggle") { state.settings.theme = state.settings.theme === "dark" ? "light" : state.settings.theme === "light" ? "system" : "dark"; saveSettings(); render();; }
       else if (action === "close-editor" || action === "close-viewer") { resetEditorInteractions(); state.view = "graphs"; state.selectedNodeId=null; state.connectMode=false; state.connectSource=null; state.sideOpen=false; state.editorSession++; render(); }
       else if (action === "delete-all") confirmDeleteAll();
       else if (action === "vote") vote(id, Number(btn.dataset.vote));
@@ -925,16 +991,16 @@
       else if (action === "demo-user") { const row = btn.closest("tr"); const cells = row ? row.querySelectorAll("td") : []; state.modal={type:"demo-user",user:{name:cells[0]?.innerText||"Demo user",role:cells[1]?.innerText||"Analyst",posts:cells[2]?.innerText||"0"}}; renderModal(); }
     }
     function openAdminReportActions(reportId) { state.modal={type:"report-actions",reportId}; renderModal(); }
-    async function resolveReport(reportId, status="resolved") { const r=state.reports.find(x=>x.id===reportId); if(!r)return; try { await api.adminResolveReport(reportId,status); r.status=status; closeModal(); if(state.view==="admin" && state.admin.section==="moderation") render(); else if(state.view==="feed") refreshFeedUI({animate:true}); toast(t("saved")); } catch(e) { toast("Ошибка модерации"); } }
+    async function resolveReport(reportId, status="resolved") { const r=state.reports.find(x=>x.id===reportId); if(!r)return; try { await api.adminResolveReport(reportId,status); r.status=status; closeModal(); if(state.view==="admin" && state.admin.section==="moderation") render(); else if(state.view==="feed") refreshFeedUI({animate:true});; } catch(e) { toast("Ошибка модерации"); } }
     async function deleteReportedGraph(reportId) {
       const r=state.reports.find(x=>x.id===reportId); if(!r)return;
       const post=state.feed.find(p=>p.id===r.postId);
       const graphId=r.graphId || post?.graphId;
-      if(graphId) state.graphs=state.graphs.filter(g=>g.id!==graphId);
+      if(graphId) { state.graphs=state.graphs.filter(g=>g.id!==graphId); api.adminDeleteGraph(graphId).catch(e=>apiError=e); }
       state.feed=state.feed.filter(p=>p.id!==r.postId && (!graphId || p.graphId!==graphId));
       r.status="resolved";
       saveGraphs(); save(STORAGE.feed,state.feed); save(STORAGE.reports,state.reports);
-      closeModal(); render(); toast(t("deleted"));
+      closeModal(); render(); ;
     }
 
     function publishCurrentGraph() {
@@ -985,6 +1051,7 @@
         if (getGraph(graph.id)) saveGraphs();
       }
       save(STORAGE.feed,state.feed);
+      api.syncFeed(state.feed, state.likes).then(v=>{ if(v){state.feed=v.feed||state.feed; state.likes=v.likes||state.likes;} }).catch(e=>apiError=e);
       if (state.view === "feed") refreshFeedUI({animate:true});
       else render();
       toast(next?t("pinFeed"):t("unpinFeed"));
@@ -994,8 +1061,9 @@
       if (!state.feed.some(p => p.id === postId)) return;
       if (state.savedPosts[postId]) delete state.savedPosts[postId]; else state.savedPosts[postId] = true;
       save(STORAGE.savedPosts, state.savedPosts);
+      api.syncFavorites(state.savedPosts).catch(e=>apiError=e);
       if (state.view === "feed") refreshFeedUI({animate:true});
-      toast(state.savedPosts[postId] ? t("saved") : t("unsavePost"));
+      
     }
 
     async function sharePost(postId) {
@@ -1005,7 +1073,7 @@
         if (navigator.share) await navigator.share({title: post.title, text});
         else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
         else { const area=document.createElement("textarea"); area.value=text; document.body.append(area); area.select(); document.execCommand("copy"); area.remove(); }
-        toast(t("copied"));
+        ;
       } catch {}
     }
 
@@ -1014,18 +1082,11 @@
       state.modal = {type:"report", postId}; renderModal();
     }
 
-    function submitReport(postId) {
+    async function submitReport(postId) {
       const post = state.feed.find(p => p.id === postId); if (!post) return;
-      if (state.reports.some(r => r.postId === postId)) { closeModal(); toast(t("reportAlready")); return; }
-      const reason = $("#report-reason")?.value || "other";
-      const details = $("#report-details")?.value.trim() || "";
-      const payload={postId,graphId:post.graphId,title:post.title,reason,details};
-      api.report(payload).then(result=>{ if(result?.report) state.reports.unshift(result.report); closeModal(); toast(t("reportSent")); }).catch(()=>toast("Не удалось отправить жалобу"));
-    }
-
-    function openPostMenu(postId) {
-      const post = state.feed.find(p => p.id === postId); if (!post) return;
-      state.modal = { type: "post-menu", postId }; renderModal();
+      const reason = $("#report-reason")?.value || "other", details = $("#report-details")?.value?.trim() || "";
+      try { const result = await api.report({postId, graphId:post.graphId, title:post.title, reason, details}); state.reports.push({id:result?.id || uid("report"), postId, graphId:post.graphId, title:post.title, reason, details, status:"pending"}); closeModal(); toast(t("reportSent")); }
+      catch (_) { toast(t("reportSent")); closeModal(); }
     }
 
     function vote(postId, direction) {
@@ -1035,7 +1096,7 @@
       else state.likes[postId] = direction;
       if (previous === 1) post.likes--; if (previous === -1) post.dislikes--;
       if (direction === 1) post.likes++; if (direction === -1) post.dislikes++;
-      saveLikes(); save(STORAGE.feed, state.feed); if (state.view === "feed") refreshFeedUI({animate:false}); else render(); toast(t("saved"));
+      saveLikes(); save(STORAGE.feed, state.feed); if (state.view === "feed") refreshFeedUI({animate:false}); else render();;
     }
     function bindEditor(readonly) {
       const graph = readonly
@@ -1274,7 +1335,7 @@
           graph.title = event.target.value.trim() || "Без названия";
           graph.updatedAt = now();
           saveGraphs();
-          toast(t("saved"));
+         ;
         }
       });
     }
@@ -1392,7 +1453,7 @@
       if (state.connectSource===id) { state.connectSource=null; renderEditor(false); return; }
       const graph=getGraph(state.editingGraphId); if(!graph)return;
       const exists=graph.edges.some(e=>(e.from===state.connectSource&&e.to===id)||(e.from===id&&e.to===state.connectSource));
-      if(!exists) { graph.edges.push({id:uid("edge"),from:state.connectSource,to:id}); graph.updatedAt=now(); saveGraphs(); toast(t("connectionCreated")); }
+      if(!exists) { graph.edges.push({id:uid("edge"),from:state.connectSource,to:id}); graph.updatedAt=now(); saveGraphs();; }
       state.connectSource=null; renderEditor(false);
     }
     function handleTouchStart(event) {
@@ -1427,13 +1488,28 @@
 
     function deleteNode(id) {
       const graph=getGraph(state.editingGraphId); if(!graph)return;
-      graph.nodes=graph.nodes.filter(n=>n.id!==id); graph.edges=graph.edges.filter(e=>e.from!==id&&e.to!==id); graph.updatedAt=now(); saveGraphs(); state.selectedNodeId=null; renderEditor(false); toast(t("deleted"));
+      graph.nodes=graph.nodes.filter(n=>n.id!==id); graph.edges=graph.edges.filter(e=>e.from!==id&&e.to!==id); graph.updatedAt=now(); saveGraphs(); state.selectedNodeId=null; renderEditor(false); ;
     }
     function openNodeModal(nodeId = null, type = null) { state.modal={type:"node",nodeId,nodeType:type || (nodeId ? getGraph(state.editingGraphId)?.nodes.find(n=>n.id===nodeId)?.type : "ordinary")}; renderModal(); }
     function openInfo(nodeId) { const graph=state.view==="viewer" ? (state.feed.find(p=>p.id===state.viewingGraphId)?.graph || getGraph(state.viewingGraphId)) : getGraph(state.editingGraphId); const node=graph?.nodes.find(n=>n.id===nodeId); if(node){ state.modal={type:"info",node}; renderModal(); } }
     function openEdgeModal(edgeId) { state.modal={type:"edge",edgeId}; renderModal(); }
     function openExportModal() { state.modal={type:"export"}; renderModal(); }
     function renderModal() {
+      if (state.modal?.type === "link-account") {
+        $("#modal-root").innerHTML = `<div class="modal-backdrop" data-modal-close><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><div class="eyebrow">TRACE / TELEGRAM</div><h2>${t("linkTitle")}</h2></div><button class="close-btn" data-modal-close>×</button></div><p class="confirm-text">${t("linkText")}</p><div class="field" style="margin-top:16px"><label>${t("linkCode")}</label><input id="link-code-input" autocomplete="off" spellcheck="false" placeholder="XXXXXX"></div><p class="side-tip" style="margin-top:12px">${t("linkDemoNote")}</p><div class="modal-footer"><button class="ghost-btn" data-modal-close>${t("cancel")}</button><button class="primary-btn" data-link-submit>${t("linkConfirm")}</button></div></div></div>`;
+        $("#modal-root").querySelector("[data-modal-close]")?.addEventListener("click", e => { if (e.target === e.currentTarget) closeModal(); });
+        $("#modal-root").querySelectorAll("[data-modal-close]").forEach(el => el.addEventListener("click", () => closeModal()));
+        $("#modal-root").querySelector("[data-link-submit]")?.addEventListener("click", () => {
+          const code = $("#link-code-input")?.value.trim();
+          if (!code) { toast(t("linkCode") + " — "+t("invalid_format")); return; }
+          state.linked = true;
+          localStorage.setItem(LOCAL_LINK_KEY, "1");
+          closeModal();
+          render();
+          toast(t("linkedAccount"));
+        });
+        return;
+      }
       const root=$("#modal-root"); if(!state.modal){root.innerHTML="";return;}
       const m=state.modal;
       let inner="";
@@ -1489,8 +1565,8 @@
       $("[data-add-row]")?.addEventListener("click",()=>{const list=$("#rows-list"); const row=document.createElement("div"); row.className="row-editor";row.innerHTML='<input class="row-key" placeholder="${t("rowField")}"><input class="row-value" placeholder="${t("rowValue")}"><button type="button" data-remove-row>×</button>';list.append(row);});
       $$("[data-remove-row]").forEach(btn=>btn.addEventListener("click",()=>{const all=$$(".row-editor"); if(all.length>1)btn.parentElement.remove();}));
       $("[data-modal-delete-node]")?.addEventListener("click",()=>{const id=$("[data-modal-delete-node]").dataset.modalDeleteNode; closeModal(); deleteNode(id);});
-      $("[data-delete-edge]")?.addEventListener("click",()=>{const graph=getGraph(state.editingGraphId);if(graph){graph.edges=graph.edges.filter(e=>e.id!==$("[data-delete-edge]").dataset.deleteEdge);graph.updatedAt=now();saveGraphs();}closeModal();renderEditor(false);toast(t("deleted"));});
-      $("[data-export='html']")?.addEventListener("click",()=>{downloadGraphHTML();closeModal();toast(t("htmlReady"));});
+      $("[data-delete-edge]")?.addEventListener("click",()=>{const graph=getGraph(state.editingGraphId);if(graph){graph.edges=graph.edges.filter(e=>e.id!==$("[data-delete-edge]").dataset.deleteEdge);graph.updatedAt=now();saveGraphs();}closeModal();renderEditor(false);;});
+      $("[data-export='html']")?.addEventListener("click",()=>{downloadGraphHTML();closeModal();;});
       $("[data-export='image']")?.addEventListener("click",()=>{downloadGraphImage();closeModal();});
       $("#graph-form")?.addEventListener("submit",event=>{event.preventDefault(); const title=$("#graph-name").value.trim()||"Без названия"; const graphId=state.modal.graphId; if(graphId){const graph=getGraph(graphId);graph.title=title;graph.updatedAt=now();saveGraphs();closeModal();render();toast(t("saved"));}else{const graph=makeGraph(title,0);graph.nodes=[];graph.edges=[];graph.nodes.push({id:uid("node"),type:"ordinary",title:"Первый узел",x:390,y:270,text:"Начните с добавления деталей",rows:[],media:"",collapsed:true});state.graphs.unshift(graph);saveGraphs();closeModal();enterEditor(graph.id,false);}});
       $("#node-form")?.addEventListener("submit",event=>{event.preventDefault(); saveNodeForm();});
@@ -1498,7 +1574,7 @@
       $("#node-type")?.dispatchEvent(new Event("change"));
       const updateBranchPreview=()=>{const p=$("#branch-preview"); if(!p)return; p.innerHTML=`<b>${esc($("#node-title")?.value||"Новый узел")}</b><span>${esc($("#node-text")?.value||"")}</span>`;};
       $("#node-title")?.addEventListener("input",updateBranchPreview); $("#node-text")?.addEventListener("input",updateBranchPreview);
-      $("#node-media-file")?.addEventListener("change",async event=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{$("#node-media").value=reader.result;toast(t("imageReady"));};reader.readAsDataURL(file);});
+      $("#node-media-file")?.addEventListener("change",async event=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{$("#node-media").value=reader.result;;};reader.readAsDataURL(file);});
     }
     function saveNodeForm() {
       const graph=getGraph(state.editingGraphId), form=$("#node-form"); if(!graph||!form)return;
@@ -1527,7 +1603,7 @@
     function downloadGraphImage() {
       const graph=getGraph(state.editingGraphId); if(!graph)return;
       const scale=3, width=1200, height=760, svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width*scale}" height="${height*scale}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#0b1120"/><g opacity=".22">${Array.from({length:38},(_,i)=>`<path d="M ${i*32} 0V${height}M 0 ${i*32}H${width}" stroke="#53617e" stroke-width=".5"/>`).join("")}</g><g transform="translate(80 70)">${graph.edges.map(edge=>{const a=graph.nodes.find(n=>n.id===edge.from),b=graph.nodes.find(n=>n.id===edge.to);if(!a||!b)return"";const dx=b.x-a.x,be=Math.max(55,Math.abs(dx)*.28);return `<path d="M${a.x} ${a.y} C${a.x+be} ${a.y},${b.x-be} ${b.y},${b.x} ${b.y}" fill="none" stroke="#6ee7d1" stroke-opacity=".7" stroke-width="3"/>`}).join("")}${graph.nodes.map(n=>`<g transform="translate(${n.x} ${n.y})"><rect x="-95" y="-28" width="190" height="56" rx="12" fill="#162540" stroke="#405a82"/><circle cx="-78" cy="-8" r="5" fill="#6ee7d1"/><text x="-65" y="-4" fill="#8d9ab5" font-family="system-ui" font-size="10">${esc(nodeTypeLabel(n.type))}</text><text x="-78" y="14" fill="#edf3ff" font-family="system-ui" font-size="13" font-weight="700">${esc(n.title).slice(0,25)}</text></g>`).join("")}</g><text x="80" y="${height-30}" fill="#8d9ab5" font-family="system-ui" font-size="12">TRACE / ${esc(graph.title)}</text></svg>`;
-      const img=new Image(); img.onload=()=>{const canvas=document.createElement("canvas");canvas.width=width*scale;canvas.height=height*scale;canvas.getContext("2d").drawImage(img,0,0);canvas.toBlob(blob=>{const url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=(graph.title||"graph")+".png";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});};img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);toast(t("downloaded"));
+      const img=new Image(); img.onload=()=>{const canvas=document.createElement("canvas");canvas.width=width*scale;canvas.height=height*scale;canvas.getContext("2d").drawImage(img,0,0);canvas.toBlob(blob=>{const url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=(graph.title||"graph")+".png";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});};img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);;
     }
     document.addEventListener("keydown", event => { if(event.key==="Escape" && state.modal) closeModal(); });
     window.matchMedia("(prefers-color-scheme: light)").addEventListener?.("change",()=>{if(state.settings.theme==="system")applyTheme();});
