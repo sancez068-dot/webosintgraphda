@@ -464,7 +464,7 @@
         connectHint: "Режим связи: нажмите на первый, затем на второй узел", connectionCreated: "Связь создана", selectNode: "Узел выбран",
         exportTitle: "Экспорт графа", htmlExport: "Самостоятельный HTML", imageExport: "Изображение PNG", downloaded: "Файл подготовлен для скачивания",
         feedTitle: "Лента графов", popular: "Популярные", recommended: "Рекомендованные", newest: "Новые", users: "пользователей",
-        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Введите код, который бот использует для привязки аккаунта.", linkCode: "Код", linkDemoNote: "Код выдаётся сервером. Отправьте его боту, затем нажмите «Проверить».", linkConfirm: "Привязать", linkCodeTitle: "Код для привязки", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
+        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Скопируйте код ниже и отправьте его боту в Telegram для привязки аккаунта. После этого нажмите «Проверить».", linkCode: "Код", linkDemoNote: "Сначала отправьте этот код боту и выполните привязку в боте. Приложение откроет меню только после подтверждения сервером.", linkConfirm: "Привязать", linkCodeTitle: "Свяжите аккаунт через бота", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
         deleteAll: "Удалить все графы", deleteAllText: "Все локальные графы и их данные будут удалены без возможности восстановления.",
         confirm: "Подтвердите действие", sureDelete: "Вы уверены?", yesDelete: "Да, удалить", allDeleted: "Все графы удалены",
         admin: "Админ-панель", statistics: "Статистика", adminGraphs: "Графы", moderation: "Модерация", pinned: "Закреплённые", adminSettings: "Настройки",
@@ -487,7 +487,7 @@
         connectHint: "Connection mode: click the first, then the second node", connectionCreated: "Connection created", selectNode: "Node selected",
         exportTitle: "Export graph", htmlExport: "Standalone HTML", imageExport: "PNG image", downloaded: "File ready to download",
         feedTitle: "Graph feed", popular: "Popular", recommended: "Recommended", newest: "Newest", users: "users",
-        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Enter the code used by the bot to link your account.", linkCode: "Code", linkDemoNote: "The code is issued by the server. Send it to the bot, then press “Check”.", linkConfirm: "Link", linkCodeTitle: "Link code", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
+        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Copy the code below and send it to the Telegram bot to link your account. Then press “Check”.", linkCode: "Code", linkDemoNote: "First send this code to the bot and complete the linking there. The app opens the main menu only after the server confirms the link.", linkConfirm: "Link", linkCodeTitle: "Link your account through the bot", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
         deleteAll: "Delete all graphs", deleteAllText: "All local graphs and their data will be permanently removed.",
         confirm: "Confirm action", sureDelete: "Are you sure?", yesDelete: "Yes, delete", allDeleted: "All graphs deleted",
         admin: "Admin panel", statistics: "Statistics", adminGraphs: "Graphs", moderation: "Moderation", pinned: "Pinned", adminSettings: "Settings",
@@ -583,7 +583,6 @@
           render();
           toast(e?.message || "Ошибка получения кода");
         }
-      catch (e) { apiError=e; linkGeneratedCode = "API ERROR"; linkGeneratedAt = Date.now(); }
     }
     function linkCooldownLeft() { return Math.max(0, LINK_CODE_COOLDOWN - (Date.now()-linkGeneratedAt)); }
     function formatCooldown(ms) { const total=Math.ceil(ms/1000), m=Math.floor(total/60), s=total%60; return `${m}:${String(s).padStart(2,"0")}`; }
@@ -707,10 +706,24 @@
           linkGeneratedCode = "";
           linkGeneratedAt = 0;
         }
-        if (localStorage.getItem(LOCAL_LINK_KEY) === "1") { state.linked = true; linkVerified = true; }
+        // Server state is authoritative. A local flag must never bypass an unlink.
+        if (!serverLinked) {
+          state.linked = false;
+          linkVerified = false;
+          localStorage.removeItem(LOCAL_LINK_KEY);
+          localStorage.removeItem("trace_link_code");
+          linkGeneratedCode = "";
+          linkGeneratedAt = 0;
+        }
       } catch (e) {
+        // Never enter the main menu after a failed/invalid link check.
         apiError = e;
-        loadLocalDemoState();
+        state.linked = false;
+        linkVerified = false;
+        localStorage.removeItem(LOCAL_LINK_KEY);
+        localStorage.removeItem("trace_link_code");
+        linkGeneratedCode = "";
+        linkGeneratedAt = 0;
       } finally { apiLoading = false; render(); }
     }
     function isAdmin() { return !!state.me?.is_admin || state.me?.role === "admin"; }
