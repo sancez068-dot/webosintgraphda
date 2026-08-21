@@ -560,9 +560,9 @@
 
     // Account linking is handled by the API using the server-issued code.
     const LINK_CODE_COOLDOWN = 5 * 60 * 1000;
-    let linkGeneratedCode = localStorage.getItem("trace_link_code") || "";
-    let linkGeneratedAt = linkGeneratedCode ? Date.now() : 0;
-    let linkVerified = localStorage.getItem(LOCAL_LINK_KEY) === "1";
+    let linkGeneratedCode = "";
+    let linkGeneratedAt = 0;
+    let linkVerified = false;
     function randomLinkPart() {
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
       const values = [letters[Math.floor(Math.random()*26)], letters[Math.floor(Math.random()*26)], String(Math.floor(Math.random()*10))];
@@ -570,7 +570,19 @@
       return values.join("");
     }
     async function generateLinkCode() {
-      try { const data = await api.linkCode(); linkGeneratedCode = String(data.code || "").trim(); localStorage.setItem("trace_link_code", linkGeneratedCode); linkGeneratedAt = Date.now(); }
+      try {
+          const data = await api.linkCode();
+          linkGeneratedCode = String(data?.code || "").trim();
+          if (!linkGeneratedCode) throw new Error("API не вернул код");
+          localStorage.setItem("trace_link_code", linkGeneratedCode);
+          linkGeneratedAt = Date.now();
+          render();
+        } catch (e) {
+          linkGeneratedCode = "";
+          linkGeneratedAt = 0;
+          render();
+          toast(e?.message || "Ошибка получения кода");
+        }
       catch (e) { apiError=e; linkGeneratedCode = "API ERROR"; linkGeneratedAt = Date.now(); }
     }
     function linkCooldownLeft() { return Math.max(0, LINK_CODE_COOLDOWN - (Date.now()-linkGeneratedAt)); }
@@ -678,6 +690,23 @@
         state.me = me?.user || null; state.graphs = Array.isArray(graphs) ? graphs : [];
         state.feed = feed?.feed || []; state.likes = feed?.likes || {};
         state.savedPosts = favorites?.savedPosts || {}; state.settings = {...defaultSettings, ...(settings?.settings || {})};
+        state.graphs = graphs?.graphs || [];
+        state.feed = feed?.items || [];
+        state.savedPosts = favorites?.savedPosts || {}; state.settings = {...defaultSettings, ...(settings?.settings || {})};
+
+        const serverLinked = !!(me?.linked || me?.link_verified || me?.linked_code || me?.is_linked);
+        if (serverLinked) {
+          state.linked = true;
+          linkVerified = true;
+          localStorage.setItem(LOCAL_LINK_KEY, "1");
+        } else {
+          state.linked = false;
+          linkVerified = false;
+          localStorage.removeItem(LOCAL_LINK_KEY);
+          localStorage.removeItem("trace_link_code");
+          linkGeneratedCode = "";
+          linkGeneratedAt = 0;
+        }
         if (localStorage.getItem(LOCAL_LINK_KEY) === "1") { state.linked = true; linkVerified = true; }
       } catch (e) {
         apiError = e;
@@ -750,7 +779,7 @@
       return `<div class="link-gate"><div class="link-gate-card">
         <div class="eyebrow">TRACE / TELEGRAM</div><h1>${t("linkCodeTitle")}</h1>
         <p class="subtitle">${t("linkText")}</p>
-        <div class="link-code-row"><div class="link-code-box" id="link-code-display">${esc(linkGeneratedCode || "Получение…")}</div><button class="icon-btn" data-link-copy title="${t("linkCopy")}">${icon("copy",18)}</button></div>
+        <div class="link-code-row"><div class="link-code-box" id="link-code-display">${esc(linkGeneratedCode || "—")}</div><button class="icon-btn" data-link-copy title="${t("linkCopy")}">${icon("copy",18)}</button></div>
         <button class="primary-btn link-gate-check" data-link-gate-check>${t("linkCheck")}</button>
         <button class="ghost-btn link-gate-new" data-link-gate-new ${left>0?"disabled":""}>${t("linkNew")}</button>
         ${left>0?`<div class="link-cooldown">${t("linkWait")} <b id="link-cooldown">${formatCooldown(left)}</b></div>`:""}
