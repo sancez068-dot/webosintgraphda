@@ -464,7 +464,7 @@
         connectHint: "Режим связи: нажмите на первый, затем на второй узел", connectionCreated: "Связь создана", selectNode: "Узел выбран",
         exportTitle: "Экспорт графа", htmlExport: "Самостоятельный HTML", imageExport: "Изображение PNG", downloaded: "Файл подготовлен для скачивания",
         feedTitle: "Лента графов", popular: "Популярные", recommended: "Рекомендованные", newest: "Новые", users: "пользователей",
-        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Введите код, который бот использует для привязки аккаунта.", linkCode: "Код", linkDemoNote: "Сейчас API отключён: привязка работает только как локальный интерфейс. После подключения API проверка кода будет серверной.", linkConfirm: "Привязать", linkCodeTitle: "Код для привязки", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
+        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Введите код, который бот использует для привязки аккаунта.", linkCode: "Код", linkDemoNote: "Код выдаётся сервером и используется для привязки аккаунта.", linkConfirm: "Привязать", linkCodeTitle: "Код для привязки", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
         deleteAll: "Удалить все графы", deleteAllText: "Все локальные графы и их данные будут удалены без возможности восстановления.",
         confirm: "Подтвердите действие", sureDelete: "Вы уверены?", yesDelete: "Да, удалить", allDeleted: "Все графы удалены",
         admin: "Админ-панель", statistics: "Статистика", adminGraphs: "Графы", moderation: "Модерация", pinned: "Закреплённые", adminSettings: "Настройки",
@@ -487,7 +487,7 @@
         connectHint: "Connection mode: click the first, then the second node", connectionCreated: "Connection created", selectNode: "Node selected",
         exportTitle: "Export graph", htmlExport: "Standalone HTML", imageExport: "PNG image", downloaded: "File ready to download",
         feedTitle: "Graph feed", popular: "Popular", recommended: "Recommended", newest: "Newest", users: "users",
-        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Enter the code used by the bot to link your account.", linkCode: "Code", linkDemoNote: "API is disabled for now: linking is only a local UI demo. After the API is connected, code verification will happen on the server.", linkConfirm: "Link", linkCodeTitle: "Link code", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
+        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Enter the code used by the bot to link your account.", linkCode: "Code", linkDemoNote: "The code is issued by the server and is used to link the account.", linkConfirm: "Link", linkCodeTitle: "Link code", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
         deleteAll: "Delete all graphs", deleteAllText: "All local graphs and their data will be permanently removed.",
         confirm: "Confirm action", sureDelete: "Are you sure?", yesDelete: "Yes, delete", allDeleted: "All graphs deleted",
         admin: "Admin panel", statistics: "Statistics", adminGraphs: "Graphs", moderation: "Moderation", pinned: "Pinned", adminSettings: "Settings",
@@ -558,7 +558,7 @@
     const BOT_USERNAME = "OsintGraphsBot";
     const LOCAL_LINK_KEY = "trace_osint_linked";
 
-    // Temporary account-linking stub. Everything here lives only in JS memory; the API will replace it later.
+    // Account linking is handled by the API using a server-issued code.
     const LINK_CODE_COOLDOWN = 5 * 60 * 1000;
     let linkGeneratedCode = "";
     let linkGeneratedAt = 0;
@@ -570,18 +570,18 @@
       return values.join("");
     }
     async function generateLinkCode() {
-      try { const data = await api.linkCode(); linkGeneratedCode = data.code; linkGeneratedAt = Date.now(); }
+      try { const data = await api.linkCode(); linkGeneratedCode = data.code; localStorage.setItem("trace_link_code", data.code); linkGeneratedAt = Date.now(); }
       catch (e) { apiError=e; linkGeneratedCode = "API ERROR"; linkGeneratedAt = Date.now(); }
     }
     function linkCooldownLeft() { return Math.max(0, LINK_CODE_COOLDOWN - (Date.now()-linkGeneratedAt)); }
     function formatCooldown(ms) { const total=Math.ceil(ms/1000), m=Math.floor(total/60), s=total%60; return `${m}:${String(s).padStart(2,"0")}`; }
 
     const API_BASE = (window.TRACE_API_URL || "").replace(/\/$/, "");
-    const tgInitData = tg?.initData || "";
     const api = {
       async request(path, options = {}) {
         const headers = { ...(options.headers || {}) };
-        if (tgInitData) headers["X-Telegram-Init-Data"] = tgInitData;
+        const linkCode = localStorage.getItem("trace_link_code") || "";
+        if (linkCode) headers["X-Link-Code"] = linkCode;
         if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
         const res = await fetch(API_BASE + path, { ...options, headers });
         if (!res.ok) { let detail = `HTTP ${res.status}`; try { const j = await res.json(); detail = j.detail || detail; } catch {} throw new Error(detail); }
@@ -682,7 +682,6 @@
       } catch (e) {
         apiError = e;
         loadLocalDemoState();
-        if (tgInitData) { try { await api.me(); } catch {} }
       } finally { apiLoading = false; render(); }
     }
     function isAdmin() { return !!state.me?.is_admin || state.me?.role === "admin"; }
@@ -763,7 +762,7 @@
         ;
       });
       $(`[data-link-gate-check]`)?.addEventListener("click",async()=>{
-        try { await api.linkCheck(linkGeneratedCode); linkVerified=true; state.linked=true; localStorage.setItem(LOCAL_LINK_KEY,"1"); render(); toast(t("linkValid")); }
+        try { await api.linkCheck(linkGeneratedCode); localStorage.setItem("trace_link_code", linkGeneratedCode); linkVerified=true; state.linked=true; localStorage.setItem(LOCAL_LINK_KEY,"1"); render(); toast(t("linkValid")); }
         catch (_) { toast(t("invalid_code")); }
       });
       $(`[data-link-gate-new]`)?.addEventListener("click",()=>{ if(linkCooldownLeft()>0)return; generateLinkCode(); render(); });
