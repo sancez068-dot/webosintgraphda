@@ -560,8 +560,8 @@
 
     // Account linking is handled by the API using the server-issued code.
     const LINK_CODE_COOLDOWN = 5 * 60 * 1000;
-    let linkGeneratedCode = "";
-    let linkGeneratedAt = 0;
+    let linkGeneratedCode = localStorage.getItem("trace_link_code") || "";
+    let linkGeneratedAt = Number(localStorage.getItem("trace_link_generated_at") || 0);
     let linkVerified = false;
     function randomLinkPart() {
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -576,6 +576,7 @@
           if (!linkGeneratedCode) throw new Error("API не вернул код");
           localStorage.setItem("trace_link_code", linkGeneratedCode);
           linkGeneratedAt = Date.now();
+          localStorage.setItem("trace_link_generated_at", String(linkGeneratedAt));
           render();
         } catch (e) {
           linkGeneratedCode = "";
@@ -615,7 +616,8 @@
       syncFeed(feed,likes) { return this.request("/api/feed/sync", {method:"PUT", body:JSON.stringify({feed,likes})}); },
       syncFavorites(savedPosts) { return this.request("/api/favorites/sync", {method:"PUT", body:JSON.stringify({savedPosts})}); },
       linkCode() { return this.request("/api/link/code", {method:"POST"}); },
-      linkCheck(code) { return this.request(`/api/link/check?code=${encodeURIComponent(code)}`, {method:"POST"}); }
+      linkCheck(code) { return this.request(`/api/link/check?code=${encodeURIComponent(code)}`, {method:"POST"}); },
+      unlink() { return this.request("/api/link/unlink", {method:"POST"}); }
     };
     let apiReady = true;
     let apiLoading = false;
@@ -660,7 +662,16 @@
       } catch (_) {}
       return Promise.resolve();
     }
-    function saveGraphs() { save(STORAGE.graphs, state.graphs); return apiReady ? api.syncGraphs(state.graphs).then(v => { if(Array.isArray(v)) state.graphs=v; return v; }).catch(e => { apiError=e; }) : Promise.resolve(); }
+    function saveGraphs() {
+      save(STORAGE.graphs, state.graphs);
+      if (!apiReady) return Promise.resolve();
+      return api.syncGraphs(state.graphs).then(v => {
+        const synced = Array.isArray(v) ? v : (Array.isArray(v?.graphs) ? v.graphs : (Array.isArray(v?.items) ? v.items : null));
+        if (synced) state.graphs = synced;
+        save(STORAGE.graphs, state.graphs);
+        return state.graphs;
+      }).catch(e => { apiError=e; return state.graphs; });
+    }
     function saveSettings() { save(STORAGE.settings, state.settings); return apiReady ? api.saveSettings(state.settings).catch(e => { apiError=e; }) : Promise.resolve(); }
     function saveLikes() { return save(STORAGE.likes, state.likes); }
     function saveAdmin() { return Promise.resolve(); }
@@ -686,12 +697,13 @@
       apiLoading = true; apiError = null;
       try {
         const [me, graphs, feed, favorites, settings] = await Promise.all([api.me(), api.graphs(), api.feed(), api.favorites(), api.settings()]);
-        state.me = me?.user || null; state.graphs = Array.isArray(graphs) ? graphs : [];
-        state.feed = feed?.feed || []; state.likes = feed?.likes || {};
-        state.savedPosts = favorites?.savedPosts || {}; state.settings = {...defaultSettings, ...(settings?.settings || {})};
-        state.graphs = graphs?.graphs || [];
-        state.feed = feed?.items || [];
-        state.savedPosts = favorites?.savedPosts || {}; state.settings = {...defaultSettings, ...(settings?.settings || {})};
+        state.me = me?.user || null;
+        // API may return either an array or an object containing `graphs`/`items`.
+        state.graphs = Array.isArray(graphs) ? graphs : (Array.isArray(graphs?.graphs) ? graphs.graphs : (Array.isArray(graphs?.items) ? graphs.items : []));
+        state.feed = Array.isArray(feed?.feed) ? feed.feed : (Array.isArray(feed?.items) ? feed.items : (Array.isArray(feed) ? feed : []));
+        state.likes = feed?.likes || {};
+        state.savedPosts = favorites?.savedPosts || {};
+        state.settings = {...defaultSettings, ...(settings?.settings || {})};
 
         const serverLinked = !!(me?.linked || me?.link_verified || me?.linked_code || me?.is_linked);
         if (serverLinked) {
@@ -699,21 +711,13 @@
           linkVerified = true;
           localStorage.setItem(LOCAL_LINK_KEY, "1");
         } else {
+          // Not linked is NOT the same as "reset the code".
+          // Keep the currently issued code across Web App restarts.
           state.linked = false;
           linkVerified = false;
           localStorage.removeItem(LOCAL_LINK_KEY);
-          localStorage.removeItem("trace_link_code");
-          linkGeneratedCode = "";
-          linkGeneratedAt = 0;
-        }
-        // Server state is authoritative. A local flag must never bypass an unlink.
-        if (!serverLinked) {
-          state.linked = false;
-          linkVerified = false;
-          localStorage.removeItem(LOCAL_LINK_KEY);
-          localStorage.removeItem("trace_link_code");
-          linkGeneratedCode = "";
-          linkGeneratedAt = 0;
+          linkGeneratedCode = localStorage.getItem("trace_link_code") || linkGeneratedCode || "";
+          linkGeneratedAt = Number(localStorage.getItem("trace_link_generated_at") || linkGeneratedAt || 0);
         }
       } catch (e) {
         // Never enter the main menu after a failed/invalid link check.
@@ -779,7 +783,7 @@
         </aside>
         <main class="main">
           <div class="topbar"><div class="breadcrumbs"><b>TRACE</b><span> / ${state.view === "admin" ? t("admin") : state.view === "home" ? t("home") : state.view === "graphs" ? t("graphs") : state.view === "feed" ? t("feed") : state.view === "favorites" ? t("favorites") : t("settings")}</span></div>
-            <div class="top-actions"><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ " : ""}${t(state.linked ? "linkedAccount" : "linkAccount")}</button>${isAdmin() ? `<button class="ghost-btn" data-action="admin-open">${icon("more",18)} <span>${t("admin")}</span></button>` : ""}<button class="icon-btn" data-action="theme-toggle" title="${t("theme")}">${icon("theme",18)}</button></div>
+            <div class="top-actions"><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ Отвязать аккаунт" : t("linkAccount")}</button>${isAdmin() ? `<button class="ghost-btn" data-action="admin-open">${icon("more",18)} <span>${t("admin")}</span></button>` : ""}<button class="icon-btn" data-action="theme-toggle" title="${t("theme")}">${icon("theme",18)}</button></div>
           </div>
           <div class="content">${content}</div>
         </main>
@@ -817,7 +821,7 @@
           if (localGraphs.length) {
             try {
               const synced = await api.syncGraphs(localGraphs);
-              if (Array.isArray(synced)) state.graphs = synced;
+              if (Array.isArray(synced)) state.graphs = synced; else if (Array.isArray(synced?.graphs)) state.graphs = synced.graphs;
             } catch (_) {}
           }
 
@@ -845,7 +849,7 @@
       return `<section class="view">
         <div class="page-title"><div><div class="eyebrow">${t("workspace")}</div><h1>${t("welcome")}</h1><p class="subtitle">${t("welcomeText")}</p></div><button class="primary-btn" data-action="create-graph">＋ ${t("create")}</button></div>
         <div class="grid dashboard-grid">
-          <article class="card welcome-card"><div><div class="eyebrow">TRACE / DEMO</div><h2>${t("create")}<br>${t("welcome").toLowerCase()}</h2><p class="subtitle">${state.graphs.length ? `${state.graphs.length} ${t("graphs").toLowerCase()} · ${totalNodes} ${t("branches")}` : t("noGraphsText")}</p></div><div class="welcome-actions"><button class="primary-btn" data-action="create-graph">${t("create")}</button><button class="ghost-btn" data-nav="graphs">${t("openGraphs")} →</button><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ " : ""}${t(state.linked ? "linkedAccount" : "linkAccount")}</button></div></article>
+          <article class="card welcome-card"><div><div class="eyebrow">TRACE / DEMO</div><h2>${t("create")}<br>${t("welcome").toLowerCase()}</h2><p class="subtitle">${state.graphs.length ? `${state.graphs.length} ${t("graphs").toLowerCase()} · ${totalNodes} ${t("branches")}` : t("noGraphsText")}</p></div><div class="welcome-actions"><button class="primary-btn" data-action="create-graph">${t("create")}</button><button class="ghost-btn" data-nav="graphs">${t("openGraphs")} →</button><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ Отвязать аккаунт" : t("linkAccount")}</button></div></article>
           <article class="card metric-card"><div><div class="eyebrow">${t("graphs")}</div><div class="metric-number">${state.graphs.length}</div></div><div class="metric-meta">TRACE API</div></article>
           <article class="card quick-card"><button data-nav="feed"><div><div class="eyebrow">${t("feed")}</div><h3>${t("feedTitle")}</h3><p class="subtitle">${state.feed.length} ${t("posts")}</p></div><span class="quick-icon">↗</span></button></article>
           <article class="card quick-card"><button data-nav="settings"><div><div class="eyebrow">${t("settings")}</div><h3>${t("settingsTitle")}</h3><p class="subtitle">${state.settings.language === "ru" ? "Русский" : "English"} · ${state.settings.theme === "dark" ? t("dark") : state.settings.theme === "light" ? t("light") : t("system")}</p></div><span class="quick-icon">⌘</span></button></article>
@@ -1027,7 +1031,8 @@
     }
     function handleAction(event) {
       const btn = event.currentTarget, action = btn.dataset.action, id = btn.dataset.id;
-      if (action === "create-graph") openCreateGraph();
+      if (action === "link-account") { state.modal = {type: state.linked ? "unlink-account" : "link-account"}; renderModal(); }
+      else if (action === "create-graph") openCreateGraph();
       else if (action === "open-viewer") enterEditor(id,true);
       else if (action === "delete-graph" || action === "admin-delete") confirmDeleteGraph(id);
       else if (action === "admin-open") { if (!isAdmin()) return toast("Недостаточно прав"); state.view = "admin"; state.admin.section = "stats"; saveAdmin(); render(); }
@@ -1556,6 +1561,22 @@
     function openEdgeModal(edgeId) { state.modal={type:"edge",edgeId}; renderModal(); }
     function openExportModal() { state.modal={type:"export"}; renderModal(); }
     function renderModal() {
+      if (state.modal?.type === "unlink-account") {
+        $("#modal-root").innerHTML = `<div class="modal-backdrop" data-modal-close><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><div class="eyebrow">TRACE / TELEGRAM</div><h2>Аккаунт связан</h2></div><button class="close-btn" data-modal-close>×</button></div><p class="confirm-text">Отвязать аккаунт? После этого текущая привязка будет сброшена, и при следующем запуске будет показан новый экран с кодом.</p><div class="modal-footer"><button class="ghost-btn" data-modal-close>Отмена</button><button class="danger-btn" data-unlink-confirm>Отвязать</button></div></div></div>`;
+        $("#modal-root").querySelectorAll("[data-modal-close]").forEach(el => el.addEventListener("click", () => closeModal()));
+        $("#modal-root").querySelector("[data-unlink-confirm]")?.addEventListener("click", async () => {
+          try {
+            await api.unlink();
+            state.linked = false; linkVerified = false;
+            localStorage.removeItem(LOCAL_LINK_KEY);
+            localStorage.removeItem("trace_link_code");
+            localStorage.removeItem("trace_link_generated_at");
+            linkGeneratedCode = ""; linkGeneratedAt = 0;
+            closeModal(); render();
+          } catch (e) { toast(e?.message || "Не удалось отвязать аккаунт"); }
+        });
+        return;
+      }
       if (state.modal?.type === "link-account") {
         $("#modal-root").innerHTML = `<div class="modal-backdrop" data-modal-close><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><div class="eyebrow">TRACE / TELEGRAM</div><h2>${t("linkTitle")}</h2></div><button class="close-btn" data-modal-close>×</button></div><p class="confirm-text">${t("linkText")}</p><div class="field" style="margin-top:16px"><label>${t("linkCode")}</label><input id="link-code-input" autocomplete="off" spellcheck="false" placeholder="XXXXXX"></div><p class="side-tip" style="margin-top:12px">${t("linkDemoNote")}</p><div class="modal-footer"><button class="ghost-btn" data-modal-close>${t("cancel")}</button><button class="primary-btn" data-link-submit>${t("linkConfirm")}</button></div></div></div>`;
         $("#modal-root").querySelector("[data-modal-close]")?.addEventListener("click", e => { if (e.target === e.currentTarget) closeModal(); });
@@ -1573,7 +1594,7 @@
             if (localGraphs.length) {
               try {
                 const synced = await api.syncGraphs(localGraphs);
-                if (Array.isArray(synced)) state.graphs = synced;
+                if (Array.isArray(synced)) state.graphs = synced; else if (Array.isArray(synced?.graphs)) state.graphs = synced.graphs;
               } catch (_) {}
             }
             closeModal(); render(); toast(t("linkedAccount"));
