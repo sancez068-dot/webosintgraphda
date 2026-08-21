@@ -464,7 +464,7 @@
         connectHint: "Режим связи: нажмите на первый, затем на второй узел", connectionCreated: "Связь создана", selectNode: "Узел выбран",
         exportTitle: "Экспорт графа", htmlExport: "Самостоятельный HTML", imageExport: "Изображение PNG", downloaded: "Файл подготовлен для скачивания",
         feedTitle: "Лента графов", popular: "Популярные", recommended: "Рекомендованные", newest: "Новые", users: "пользователей",
-        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Скопируйте код ниже и отправьте его боту в Telegram для привязки аккаунта. После этого нажмите «Проверить».", linkCode: "Код", linkDemoNote: "Сначала отправьте этот код боту и выполните привязку в боте. Приложение откроет меню только после подтверждения сервером.", linkConfirm: "Привязать", linkCodeTitle: "Свяжите аккаунт через бота", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
+        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Введите код, который бот использует для привязки аккаунта.", linkCode: "Код", linkDemoNote: "Код выдаётся сервером. Отправьте его боту, затем нажмите «Проверить».", linkConfirm: "Привязать", linkCodeTitle: "Код для привязки", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
         deleteAll: "Удалить все графы", deleteAllText: "Все локальные графы и их данные будут удалены без возможности восстановления.",
         confirm: "Подтвердите действие", sureDelete: "Вы уверены?", yesDelete: "Да, удалить", allDeleted: "Все графы удалены",
         admin: "Админ-панель", statistics: "Статистика", adminGraphs: "Графы", moderation: "Модерация", pinned: "Закреплённые", adminSettings: "Настройки",
@@ -487,7 +487,7 @@
         connectHint: "Connection mode: click the first, then the second node", connectionCreated: "Connection created", selectNode: "Node selected",
         exportTitle: "Export graph", htmlExport: "Standalone HTML", imageExport: "PNG image", downloaded: "File ready to download",
         feedTitle: "Graph feed", popular: "Popular", recommended: "Recommended", newest: "Newest", users: "users",
-        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Copy the code below and send it to the Telegram bot to link your account. Then press “Check”.", linkCode: "Code", linkDemoNote: "First send this code to the bot and complete the linking there. The app opens the main menu only after the server confirms the link.", linkConfirm: "Link", linkCodeTitle: "Link your account through the bot", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
+        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Enter the code used by the bot to link your account.", linkCode: "Code", linkDemoNote: "The code is issued by the server. Send it to the bot, then press “Check”.", linkConfirm: "Link", linkCodeTitle: "Link code", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
         deleteAll: "Delete all graphs", deleteAllText: "All local graphs and their data will be permanently removed.",
         confirm: "Confirm action", sureDelete: "Are you sure?", yesDelete: "Yes, delete", allDeleted: "All graphs deleted",
         admin: "Admin panel", statistics: "Statistics", adminGraphs: "Graphs", moderation: "Moderation", pinned: "Pinned", adminSettings: "Settings",
@@ -562,7 +562,7 @@
     const LINK_CODE_COOLDOWN = 5 * 60 * 1000;
     let linkGeneratedCode = localStorage.getItem("trace_link_code") || "";
     let linkGeneratedAt = Number(localStorage.getItem("trace_link_generated_at") || 0);
-    let linkVerified = false;
+    let linkVerified = localStorage.getItem(LOCAL_LINK_KEY) === "1";
     function randomLinkPart() {
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
       const values = [letters[Math.floor(Math.random()*26)], letters[Math.floor(Math.random()*26)], String(Math.floor(Math.random()*10))];
@@ -662,16 +662,7 @@
       } catch (_) {}
       return Promise.resolve();
     }
-    function saveGraphs() {
-      save(STORAGE.graphs, state.graphs);
-      if (!apiReady) return Promise.resolve();
-      return api.syncGraphs(state.graphs).then(v => {
-        const synced = Array.isArray(v) ? v : (Array.isArray(v?.graphs) ? v.graphs : (Array.isArray(v?.items) ? v.items : null));
-        if (synced) state.graphs = synced;
-        save(STORAGE.graphs, state.graphs);
-        return state.graphs;
-      }).catch(e => { apiError=e; return state.graphs; });
-    }
+    function saveGraphs() { const snapshot=clone(state.graphs); save(STORAGE.graphs,snapshot); return apiReady ? api.syncGraphs(snapshot).then(v => v).catch(e => { apiError=e; }) : Promise.resolve(); }
     function saveSettings() { save(STORAGE.settings, state.settings); return apiReady ? api.saveSettings(state.settings).catch(e => { apiError=e; }) : Promise.resolve(); }
     function saveLikes() { return save(STORAGE.likes, state.likes); }
     function saveAdmin() { return Promise.resolve(); }
@@ -698,36 +689,38 @@
       try {
         const [me, graphs, feed, favorites, settings] = await Promise.all([api.me(), api.graphs(), api.feed(), api.favorites(), api.settings()]);
         state.me = me?.user || null;
-        // API may return either an array or an object containing `graphs`/`items`.
-        state.graphs = Array.isArray(graphs) ? graphs : (Array.isArray(graphs?.graphs) ? graphs.graphs : (Array.isArray(graphs?.items) ? graphs.items : []));
-        state.feed = Array.isArray(feed?.feed) ? feed.feed : (Array.isArray(feed?.items) ? feed.items : (Array.isArray(feed) ? feed : []));
-        state.likes = feed?.likes || {};
-        state.savedPosts = favorites?.savedPosts || {};
-        state.settings = {...defaultSettings, ...(settings?.settings || {})};
+        const serverGraphs = Array.isArray(graphs) ? graphs : (Array.isArray(graphs?.graphs) ? graphs.graphs : (Array.isArray(graphs?.items) ? graphs.items : []));
+        const localGraphs = safeJson(localStorage.getItem(STORAGE.graphs), []);
+        const mergedGraphs = new Map();
+        (Array.isArray(serverGraphs) ? serverGraphs : []).forEach(g => { if(g?.id) mergedGraphs.set(String(g.id), g); });
+        (Array.isArray(localGraphs) ? localGraphs : []).forEach(g => { if(g?.id && !mergedGraphs.has(String(g.id))) mergedGraphs.set(String(g.id), g); });
+        state.graphs = [...mergedGraphs.values()];
+        state.feed = Array.isArray(feed?.feed) ? feed.feed : (Array.isArray(feed?.items) ? feed.items : []); state.likes = feed?.likes || {};
+        state.savedPosts = favorites?.savedPosts || {}; state.settings = {...defaultSettings, ...(settings?.settings || {})};
+        state.savedPosts = favorites?.savedPosts || {}; state.settings = {...defaultSettings, ...(settings?.settings || {})};
 
         const serverLinked = !!(me?.linked || me?.link_verified || me?.linked_code || me?.is_linked);
         if (serverLinked) {
           state.linked = true;
           linkVerified = true;
           localStorage.setItem(LOCAL_LINK_KEY, "1");
+          if (me?.linked_code) {
+            linkGeneratedCode = String(me.linked_code).trim().toUpperCase();
+            localStorage.setItem("trace_link_code", linkGeneratedCode);
+          }
+        } else if (localStorage.getItem(LOCAL_LINK_KEY) === "1") {
+          // Keep the established local session across Web App restarts.
+          // The server may omit link flags from /api/auth/me; only explicit unlink
+          // should clear this local state.
+          state.linked = true;
+          linkVerified = true;
         } else {
-          // Not linked is NOT the same as "reset the code".
-          // Keep the currently issued code across Web App restarts.
           state.linked = false;
           linkVerified = false;
-          localStorage.removeItem(LOCAL_LINK_KEY);
-          linkGeneratedCode = localStorage.getItem("trace_link_code") || linkGeneratedCode || "";
-          linkGeneratedAt = Number(localStorage.getItem("trace_link_generated_at") || linkGeneratedAt || 0);
         }
       } catch (e) {
-        // Never enter the main menu after a failed/invalid link check.
         apiError = e;
-        state.linked = false;
-        linkVerified = false;
-        localStorage.removeItem(LOCAL_LINK_KEY);
-        localStorage.removeItem("trace_link_code");
-        linkGeneratedCode = "";
-        linkGeneratedAt = 0;
+        loadLocalDemoState();
       } finally { apiLoading = false; render(); }
     }
     function isAdmin() { return !!state.me?.is_admin || state.me?.role === "admin"; }
@@ -783,7 +776,7 @@
         </aside>
         <main class="main">
           <div class="topbar"><div class="breadcrumbs"><b>TRACE</b><span> / ${state.view === "admin" ? t("admin") : state.view === "home" ? t("home") : state.view === "graphs" ? t("graphs") : state.view === "feed" ? t("feed") : state.view === "favorites" ? t("favorites") : t("settings")}</span></div>
-            <div class="top-actions"><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ Отвязать аккаунт" : t("linkAccount")}</button>${isAdmin() ? `<button class="ghost-btn" data-action="admin-open">${icon("more",18)} <span>${t("admin")}</span></button>` : ""}<button class="icon-btn" data-action="theme-toggle" title="${t("theme")}">${icon("theme",18)}</button></div>
+            <div class="top-actions"><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ " : ""}${t(state.linked ? "linkedAccount" : "linkAccount")}</button>${isAdmin() ? `<button class="ghost-btn" data-action="admin-open">${icon("more",18)} <span>${t("admin")}</span></button>` : ""}<button class="icon-btn" data-action="theme-toggle" title="${t("theme")}">${icon("theme",18)}</button></div>
           </div>
           <div class="content">${content}</div>
         </main>
@@ -791,7 +784,7 @@
       </div>`;
     }
     function renderLinkGate() {
-      if (!linkGeneratedCode) generateLinkCode();
+      if (!linkGeneratedCode && !apiLoading) generateLinkCode();
       const left = linkCooldownLeft();
       return `<div class="link-gate"><div class="link-gate-card">
         <div class="eyebrow">TRACE / TELEGRAM</div><h1>${t("linkCodeTitle")}</h1>
@@ -821,7 +814,7 @@
           if (localGraphs.length) {
             try {
               const synced = await api.syncGraphs(localGraphs);
-              if (Array.isArray(synced)) state.graphs = synced; else if (Array.isArray(synced?.graphs)) state.graphs = synced.graphs;
+              if (Array.isArray(synced)) state.graphs = synced;
             } catch (_) {}
           }
 
@@ -849,7 +842,7 @@
       return `<section class="view">
         <div class="page-title"><div><div class="eyebrow">${t("workspace")}</div><h1>${t("welcome")}</h1><p class="subtitle">${t("welcomeText")}</p></div><button class="primary-btn" data-action="create-graph">＋ ${t("create")}</button></div>
         <div class="grid dashboard-grid">
-          <article class="card welcome-card"><div><div class="eyebrow">TRACE / DEMO</div><h2>${t("create")}<br>${t("welcome").toLowerCase()}</h2><p class="subtitle">${state.graphs.length ? `${state.graphs.length} ${t("graphs").toLowerCase()} · ${totalNodes} ${t("branches")}` : t("noGraphsText")}</p></div><div class="welcome-actions"><button class="primary-btn" data-action="create-graph">${t("create")}</button><button class="ghost-btn" data-nav="graphs">${t("openGraphs")} →</button><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ Отвязать аккаунт" : t("linkAccount")}</button></div></article>
+          <article class="card welcome-card"><div><div class="eyebrow">TRACE / DEMO</div><h2>${t("create")}<br>${t("welcome").toLowerCase()}</h2><p class="subtitle">${state.graphs.length ? `${state.graphs.length} ${t("graphs").toLowerCase()} · ${totalNodes} ${t("branches")}` : t("noGraphsText")}</p></div><div class="welcome-actions"><button class="primary-btn" data-action="create-graph">${t("create")}</button><button class="ghost-btn" data-nav="graphs">${t("openGraphs")} →</button><button class="ghost-btn" data-action="link-account">${state.linked ? "✓ " : ""}${t(state.linked ? "linkedAccount" : "linkAccount")}</button></div></article>
           <article class="card metric-card"><div><div class="eyebrow">${t("graphs")}</div><div class="metric-number">${state.graphs.length}</div></div><div class="metric-meta">TRACE API</div></article>
           <article class="card quick-card"><button data-nav="feed"><div><div class="eyebrow">${t("feed")}</div><h3>${t("feedTitle")}</h3><p class="subtitle">${state.feed.length} ${t("posts")}</p></div><span class="quick-icon">↗</span></button></article>
           <article class="card quick-card"><button data-nav="settings"><div><div class="eyebrow">${t("settings")}</div><h3>${t("settingsTitle")}</h3><p class="subtitle">${state.settings.language === "ru" ? "Русский" : "English"} · ${state.settings.theme === "dark" ? t("dark") : state.settings.theme === "light" ? t("light") : t("system")}</p></div><span class="quick-icon">⌘</span></button></article>
@@ -905,8 +898,20 @@
       const posts = sortedFeed();
       return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("community")}</div><h1>${t("feedTitle")}</h1><p class="subtitle">TRACE API</p></div><div class="feed-layout-tools"><div class="tabs">${[["popular",t("popular")],["recommended",t("recommended")],["newest",t("newest")]].map(([id,label])=>`<button class="tab ${state.feedTab===id?"active":""}" data-feed-tab="${id}">${label}</button>`).join("")}</div><div class="view-toggle"><button class="${state.feedLayout==="comfortable"?"active":""}" data-feed-layout="comfortable" title="${t("comfortable")}">${icon("panel",15)}</button><button class="${state.feedLayout==="compact"?"active":""}" data-feed-layout="compact" title="${t("compact")}">${icon("table",15)}</button></div></div></div><div class="feed-list ${state.feedLayout==="compact"?"compact":""}">${posts.map(renderPost).join("")}</div></section>`;
     }
+    async function unlinkAccount() {
+      try {
+        if (api.unlink) await api.unlink();
+      } catch (_) {}
+      linkVerified=false; state.linked=false;
+      localStorage.removeItem(LOCAL_LINK_KEY);
+      localStorage.removeItem("trace_link_code");
+      localStorage.removeItem("trace_link_generated_at");
+      linkGeneratedCode=""; linkGeneratedAt=0;
+      state.view="home";
+      render();
+    }
     function renderSettings() {
-      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("settings")}</div><h1>${t("settingsTitle")}</h1><p class="subtitle">TRACE API</p></div></div><div class="settings-grid"><div class="card setting-card"><div class="setting-row"><div class="setting-label"><b>${t("language")}</b><span>Русский / English</span></div><select class="select" data-setting="language"><option value="ru" ${state.settings.language==="ru"?"selected":""}>🇷🇺 Русский</option><option value="en" ${state.settings.language==="en"?"selected":""}>🇺🇸 English</option></select></div><div class="setting-row"><div class="setting-label"><b>${t("theme")}</b><span>${t("theme")}</span></div><select class="select" data-setting="theme"><option value="system" ${state.settings.theme==="system"?"selected":""}>${t("system")}</option><option value="dark" ${state.settings.theme==="dark"?"selected":""}>${t("dark")}</option><option value="light" ${state.settings.theme==="light"?"selected":""}>${t("light")}</option></select></div><div class="setting-row"><div class="setting-label"><b>API</b><span>TRACE API</span></div><span class="quick-icon">✓</span></div></div><div class="card setting-card danger-zone"><h3>${t("deleteAll")}</h3><p class="subtitle">${t("deleteAllText")}</p><button class="danger-btn" style="margin-top:20px" data-action="delete-all">${t("deleteAll")}</button></div></div></section>`;
+      return `<section class="view"><div class="page-title"><div><div class="eyebrow">${t("settings")}</div><h1>${t("settingsTitle")}</h1><p class="subtitle">TRACE API</p></div></div><div class="settings-grid"><div class="card setting-card"><div class="setting-row"><div class="setting-label"><b>${t("language")}</b><span>Русский / English</span></div><select class="select" data-setting="language"><option value="ru" ${state.settings.language==="ru"?"selected":""}>🇷🇺 Русский</option><option value="en" ${state.settings.language==="en"?"selected":""}>🇺🇸 English</option></select></div><div class="setting-row"><div class="setting-label"><b>${t("theme")}</b><span>${t("theme")}</span></div><select class="select" data-setting="theme"><option value="system" ${state.settings.theme==="system"?"selected":""}>${t("system")}</option><option value="dark" ${state.settings.theme==="dark"?"selected":""}>${t("dark")}</option><option value="light" ${state.settings.theme==="light"?"selected":""}>${t("light")}</option></select></div><div class="setting-row"><div class="setting-label"><b>API</b><span>TRACE API</span></div><span class="quick-icon">✓</span></div></div><div class="card setting-card danger-zone"><h3>Аккаунт</h3><p class="subtitle">Привязка сохраняется между запусками Web App.</p><button class="danger-btn" data-action="unlink-account" style="margin-bottom:16px">Отвязать аккаунт</button><h3>${t("deleteAll")}</h3><p class="subtitle">${t("deleteAllText")}</p><button class="danger-btn" style="margin-top:20px" data-action="delete-all">${t("deleteAll")}</button></div></div></section>`;
     }
     function renderAdmin() {
       const sections = [["stats",t("statistics")],["graphs",t("adminGraphs")],["users",t("usersFake")],["moderation",t("moderation")],["pinned",t("pinned")],["settings",t("adminSettings")]];
@@ -1021,6 +1026,7 @@
     }
 
     function bindShell() {
+      $$("[data-action=\"unlink-account\"]").forEach(btn=>btn.addEventListener("click", unlinkAccount));
       $$("[data-nav]").forEach(btn => btn.addEventListener("click", () => setView(btn.dataset.nav)));
       $$("[data-action]").forEach(btn => btn.addEventListener("click", handleAction));
       $$("[data-page]").forEach(btn => btn.addEventListener("click", () => { if(!btn.disabled) { state.page = Number(btn.dataset.page); render(); } }));
@@ -1031,8 +1037,7 @@
     }
     function handleAction(event) {
       const btn = event.currentTarget, action = btn.dataset.action, id = btn.dataset.id;
-      if (action === "link-account") { state.modal = {type: state.linked ? "unlink-account" : "link-account"}; renderModal(); }
-      else if (action === "create-graph") openCreateGraph();
+      if (action === "create-graph") openCreateGraph();
       else if (action === "open-viewer") enterEditor(id,true);
       else if (action === "delete-graph" || action === "admin-delete") confirmDeleteGraph(id);
       else if (action === "admin-open") { if (!isAdmin()) return toast("Недостаточно прав"); state.view = "admin"; state.admin.section = "stats"; saveAdmin(); render(); }
@@ -1561,22 +1566,6 @@
     function openEdgeModal(edgeId) { state.modal={type:"edge",edgeId}; renderModal(); }
     function openExportModal() { state.modal={type:"export"}; renderModal(); }
     function renderModal() {
-      if (state.modal?.type === "unlink-account") {
-        $("#modal-root").innerHTML = `<div class="modal-backdrop" data-modal-close><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><div class="eyebrow">TRACE / TELEGRAM</div><h2>Аккаунт связан</h2></div><button class="close-btn" data-modal-close>×</button></div><p class="confirm-text">Отвязать аккаунт? После этого текущая привязка будет сброшена, и при следующем запуске будет показан новый экран с кодом.</p><div class="modal-footer"><button class="ghost-btn" data-modal-close>Отмена</button><button class="danger-btn" data-unlink-confirm>Отвязать</button></div></div></div>`;
-        $("#modal-root").querySelectorAll("[data-modal-close]").forEach(el => el.addEventListener("click", () => closeModal()));
-        $("#modal-root").querySelector("[data-unlink-confirm]")?.addEventListener("click", async () => {
-          try {
-            await api.unlink();
-            state.linked = false; linkVerified = false;
-            localStorage.removeItem(LOCAL_LINK_KEY);
-            localStorage.removeItem("trace_link_code");
-            localStorage.removeItem("trace_link_generated_at");
-            linkGeneratedCode = ""; linkGeneratedAt = 0;
-            closeModal(); render();
-          } catch (e) { toast(e?.message || "Не удалось отвязать аккаунт"); }
-        });
-        return;
-      }
       if (state.modal?.type === "link-account") {
         $("#modal-root").innerHTML = `<div class="modal-backdrop" data-modal-close><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><div class="eyebrow">TRACE / TELEGRAM</div><h2>${t("linkTitle")}</h2></div><button class="close-btn" data-modal-close>×</button></div><p class="confirm-text">${t("linkText")}</p><div class="field" style="margin-top:16px"><label>${t("linkCode")}</label><input id="link-code-input" autocomplete="off" spellcheck="false" placeholder="XXXXXX"></div><p class="side-tip" style="margin-top:12px">${t("linkDemoNote")}</p><div class="modal-footer"><button class="ghost-btn" data-modal-close>${t("cancel")}</button><button class="primary-btn" data-link-submit>${t("linkConfirm")}</button></div></div></div>`;
         $("#modal-root").querySelector("[data-modal-close]")?.addEventListener("click", e => { if (e.target === e.currentTarget) closeModal(); });
@@ -1593,8 +1582,7 @@
             const localGraphs = Array.isArray(state.graphs) ? clone(state.graphs) : [];
             if (localGraphs.length) {
               try {
-                const synced = await api.syncGraphs(localGraphs);
-                if (Array.isArray(synced)) state.graphs = synced; else if (Array.isArray(synced?.graphs)) state.graphs = synced.graphs;
+                await api.syncGraphs(localGraphs);
               } catch (_) {}
             }
             closeModal(); render(); toast(t("linkedAccount"));
