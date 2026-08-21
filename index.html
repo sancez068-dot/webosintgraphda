@@ -464,7 +464,7 @@
         connectHint: "Режим связи: нажмите на первый, затем на второй узел", connectionCreated: "Связь создана", selectNode: "Узел выбран",
         exportTitle: "Экспорт графа", htmlExport: "Самостоятельный HTML", imageExport: "Изображение PNG", downloaded: "Файл подготовлен для скачивания",
         feedTitle: "Лента графов", popular: "Популярные", recommended: "Рекомендованные", newest: "Новые", users: "пользователей",
-        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Введите код, который бот использует для привязки аккаунта.", linkCode: "Код", linkDemoNote: "Код выдаётся сервером и используется для привязки аккаунта.", linkConfirm: "Привязать", linkCodeTitle: "Код для привязки", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
+        settingsTitle: "Настройки", linkAccount: "Связать", linkedAccount: "Аккаунт связан", linkTitle: "Связать аккаунт", linkText: "Введите код, который бот использует для привязки аккаунта.", linkCode: "Код", linkDemoNote: "Код выдаётся сервером. Отправьте его боту, затем нажмите «Проверить».", linkConfirm: "Привязать", linkCodeTitle: "Код для привязки", linkCopy: "Скопировать", linkCheck: "Проверить", linkNew: "Получить новый код", linkWait: "Новый код будет доступен через", linkCodeCopied: "Код скопирован", linkValid: "Код принят", language: "Язык", theme: "Тема", system: "Системная", dark: "Тёмная", light: "Светлая",
         deleteAll: "Удалить все графы", deleteAllText: "Все локальные графы и их данные будут удалены без возможности восстановления.",
         confirm: "Подтвердите действие", sureDelete: "Вы уверены?", yesDelete: "Да, удалить", allDeleted: "Все графы удалены",
         admin: "Админ-панель", statistics: "Статистика", adminGraphs: "Графы", moderation: "Модерация", pinned: "Закреплённые", adminSettings: "Настройки",
@@ -487,7 +487,7 @@
         connectHint: "Connection mode: click the first, then the second node", connectionCreated: "Connection created", selectNode: "Node selected",
         exportTitle: "Export graph", htmlExport: "Standalone HTML", imageExport: "PNG image", downloaded: "File ready to download",
         feedTitle: "Graph feed", popular: "Popular", recommended: "Recommended", newest: "Newest", users: "users",
-        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Enter the code used by the bot to link your account.", linkCode: "Code", linkDemoNote: "The code is issued by the server and is used to link the account.", linkConfirm: "Link", linkCodeTitle: "Link code", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
+        settingsTitle: "Settings", linkAccount: "Link account", linkedAccount: "Account linked", linkTitle: "Link account", linkText: "Enter the code used by the bot to link your account.", linkCode: "Code", linkDemoNote: "The code is issued by the server. Send it to the bot, then press “Check”.", linkConfirm: "Link", linkCodeTitle: "Link code", linkCopy: "Copy", linkCheck: "Check", linkNew: "Get new code", linkWait: "A new code will be available in", linkCodeCopied: "Code copied", linkValid: "Code accepted", language: "Language", theme: "Theme", system: "System", dark: "Dark", light: "Light",
         deleteAll: "Delete all graphs", deleteAllText: "All local graphs and their data will be permanently removed.",
         confirm: "Confirm action", sureDelete: "Are you sure?", yesDelete: "Yes, delete", allDeleted: "All graphs deleted",
         admin: "Admin panel", statistics: "Statistics", adminGraphs: "Graphs", moderation: "Moderation", pinned: "Pinned", adminSettings: "Settings",
@@ -558,11 +558,11 @@
     const BOT_USERNAME = "OsintGraphsBot";
     const LOCAL_LINK_KEY = "trace_osint_linked";
 
-    // Account linking is handled by the API using a server-issued code.
+    // Account linking is handled by the API using the server-issued code.
     const LINK_CODE_COOLDOWN = 5 * 60 * 1000;
-    let linkGeneratedCode = "";
-    let linkGeneratedAt = 0;
-    let linkVerified = false;
+    let linkGeneratedCode = localStorage.getItem("trace_link_code") || "";
+    let linkGeneratedAt = linkGeneratedCode ? Date.now() : 0;
+    let linkVerified = localStorage.getItem(LOCAL_LINK_KEY) === "1";
     function randomLinkPart() {
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
       const values = [letters[Math.floor(Math.random()*26)], letters[Math.floor(Math.random()*26)], String(Math.floor(Math.random()*10))];
@@ -570,7 +570,7 @@
       return values.join("");
     }
     async function generateLinkCode() {
-      try { const data = await api.linkCode(); linkGeneratedCode = data.code; localStorage.setItem("trace_link_code", data.code); linkGeneratedAt = Date.now(); }
+      try { const data = await api.linkCode(); linkGeneratedCode = String(data.code || "").trim(); localStorage.setItem("trace_link_code", linkGeneratedCode); linkGeneratedAt = Date.now(); }
       catch (e) { apiError=e; linkGeneratedCode = "API ERROR"; linkGeneratedAt = Date.now(); }
     }
     function linkCooldownLeft() { return Math.max(0, LINK_CODE_COOLDOWN - (Date.now()-linkGeneratedAt)); }
@@ -678,7 +678,7 @@
         state.me = me?.user || null; state.graphs = Array.isArray(graphs) ? graphs : [];
         state.feed = feed?.feed || []; state.likes = feed?.likes || {};
         state.savedPosts = favorites?.savedPosts || {}; state.settings = {...defaultSettings, ...(settings?.settings || {})};
-        state.linked = true; linkVerified = true;
+        if (localStorage.getItem(LOCAL_LINK_KEY) === "1") { state.linked = true; linkVerified = true; }
       } catch (e) {
         apiError = e;
         loadLocalDemoState();
@@ -750,7 +750,7 @@
       return `<div class="link-gate"><div class="link-gate-card">
         <div class="eyebrow">TRACE / TELEGRAM</div><h1>${t("linkCodeTitle")}</h1>
         <p class="subtitle">${t("linkText")}</p>
-        <div class="link-code-row"><div class="link-code-box">${esc(linkGeneratedCode)}</div><button class="icon-btn" data-link-copy title="${t("linkCopy")}">${icon("copy",18)}</button></div>
+        <div class="link-code-row"><div class="link-code-box" id="link-code-display">${esc(linkGeneratedCode || "Получение…")}</div><button class="icon-btn" data-link-copy title="${t("linkCopy")}">${icon("copy",18)}</button></div>
         <button class="primary-btn link-gate-check" data-link-gate-check>${t("linkCheck")}</button>
         <button class="ghost-btn link-gate-new" data-link-gate-new ${left>0?"disabled":""}>${t("linkNew")}</button>
         ${left>0?`<div class="link-cooldown">${t("linkWait")} <b id="link-cooldown">${formatCooldown(left)}</b></div>`:""}
@@ -761,9 +761,29 @@
         try { await navigator.clipboard.writeText(linkGeneratedCode); } catch (_) { const a=document.createElement("textarea"); a.value=linkGeneratedCode; document.body.appendChild(a); a.select(); document.execCommand("copy"); a.remove(); }
         ;
       });
-      $(`[data-link-gate-check]`)?.addEventListener("click",async()=>{
-        try { await api.linkCheck(linkGeneratedCode); localStorage.setItem("trace_link_code", linkGeneratedCode); linkVerified=true; state.linked=true; localStorage.setItem(LOCAL_LINK_KEY,"1"); render(); toast(t("linkValid")); }
-        catch (_) { toast(t("invalid_code")); }
+      $(`[data-link-gate-check]`)?.addEventListener("click", async()=>{
+        try {
+          const result = await api.linkCheck(linkGeneratedCode);
+          if (!result || result.linked !== true) throw new Error(result?.detail || "Код ещё не привязан ботом");
+          localStorage.setItem("trace_link_code", linkGeneratedCode);
+          linkVerified = true;
+          state.linked = true;
+          localStorage.setItem(LOCAL_LINK_KEY,"1");
+
+          // Migrate graphs created before account linking.
+          const localGraphs = Array.isArray(state.graphs) ? clone(state.graphs) : [];
+          if (localGraphs.length) {
+            try {
+              const synced = await api.syncGraphs(localGraphs);
+              if (Array.isArray(synced)) state.graphs = synced;
+            } catch (_) {}
+          }
+
+          render();
+          toast(t("linkedAccount"));
+        } catch (e) {
+          toast(e?.message || "Неверный или ещё не привязанный код");
+        }
       });
       $(`[data-link-gate-new]`)?.addEventListener("click",()=>{ if(linkCooldownLeft()>0)return; generateLinkCode(); render(); });
       if(linkCooldownLeft()>0){ const timer=setInterval(()=>{ const el=$("#link-cooldown"); if(linkVerified||!el){clearInterval(timer);return;} const left=linkCooldownLeft(); if(left<=0){clearInterval(timer);render();return;} el.textContent=formatCooldown(left); },250); }
@@ -1498,14 +1518,26 @@
         $("#modal-root").innerHTML = `<div class="modal-backdrop" data-modal-close><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><div class="eyebrow">TRACE / TELEGRAM</div><h2>${t("linkTitle")}</h2></div><button class="close-btn" data-modal-close>×</button></div><p class="confirm-text">${t("linkText")}</p><div class="field" style="margin-top:16px"><label>${t("linkCode")}</label><input id="link-code-input" autocomplete="off" spellcheck="false" placeholder="XXXXXX"></div><p class="side-tip" style="margin-top:12px">${t("linkDemoNote")}</p><div class="modal-footer"><button class="ghost-btn" data-modal-close>${t("cancel")}</button><button class="primary-btn" data-link-submit>${t("linkConfirm")}</button></div></div></div>`;
         $("#modal-root").querySelector("[data-modal-close]")?.addEventListener("click", e => { if (e.target === e.currentTarget) closeModal(); });
         $("#modal-root").querySelectorAll("[data-modal-close]").forEach(el => el.addEventListener("click", () => closeModal()));
-        $("#modal-root").querySelector("[data-link-submit]")?.addEventListener("click", () => {
-          const code = $("#link-code-input")?.value.trim();
-          if (!code) { toast(t("linkCode") + " — "+t("invalid_format")); return; }
-          state.linked = true;
-          localStorage.setItem(LOCAL_LINK_KEY, "1");
-          closeModal();
-          render();
-          toast(t("linkedAccount"));
+        $("#modal-root").querySelector("[data-link-submit]")?.addEventListener("click", async () => {
+          const code = $("#link-code-input")?.value.trim().toUpperCase();
+          if (!/^[A-Z0-9]{3}-[A-Z0-9]{3}$/.test(code)) { toast(t("linkCode") + " — " + t("invalid_format")); return; }
+          try {
+            const result = await api.linkCheck(code);
+            if (!result || result.linked !== true) throw new Error(result?.detail || "Код ещё не привязан ботом");
+            localStorage.setItem("trace_link_code", code);
+            state.linked = true; linkVerified = true;
+            localStorage.setItem(LOCAL_LINK_KEY, "1");
+            const localGraphs = Array.isArray(state.graphs) ? clone(state.graphs) : [];
+            if (localGraphs.length) {
+              try {
+                const synced = await api.syncGraphs(localGraphs);
+                if (Array.isArray(synced)) state.graphs = synced;
+              } catch (_) {}
+            }
+            closeModal(); render(); toast(t("linkedAccount"));
+          } catch (e) {
+            toast(e?.message || "Неверный или ещё не привязанный код");
+          }
         });
         return;
       }
